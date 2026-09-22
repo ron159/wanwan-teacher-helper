@@ -4,6 +4,7 @@ $base = Join-Path $env:PUBLIC ('WanwanSmoke-' + [guid]::NewGuid().ToString('N'))
 $secret = [guid]::NewGuid().ToString('N') + 'aA1!'
 $secure = ConvertTo-SecureString $secret -AsPlainText -Force
 $rule = 'Wanwan smoke outbound block'
+$executable = Join-Path $base 'WanwanTeacherHelper.exe'
 $originalTemp = $env:TEMP
 $originalTmp = $env:TMP
 $originalPath = $env:PATH
@@ -13,15 +14,15 @@ try {
     Add-LocalGroupMember -Group $usersGroup.Name -Member $account
     New-Item -ItemType Directory -Path $base | Out-Null
     New-Item -ItemType Directory -Path "$base/temp" | Out-Null
-    Copy-Item dist/WanwanTeacherHelper.exe "$base/WanwanTeacherHelper.exe"
+    Copy-Item dist/WanwanTeacherHelper.exe $executable
     & icacls $base /grant "${account}:(OI)(CI)M" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to grant smoke output permission' }
-    New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program "$base/WanwanTeacherHelper.exe" -Action Block | Out-Null
+    New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $executable -Action Block | Out-Null
     $env:TEMP = "$base/temp"
     $env:TMP = "$base/temp"
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
     $credential = [pscredential]::new("$env:COMPUTERNAME\$account", $secure)
-    $p = Start-Process -FilePath "$base/WanwanTeacherHelper.exe" -ArgumentList '--self-test', "$base/results" -WorkingDirectory $base -Credential $credential -LoadUserProfile -PassThru
+    $p = Start-Process -FilePath $executable -ArgumentList '--self-test', "$base/results" -WorkingDirectory $base -Credential $credential -LoadUserProfile -PassThru
     if (!$p.WaitForExit(240000)) {
         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
         throw 'Standard user smoke timed out'
