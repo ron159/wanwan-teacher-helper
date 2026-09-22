@@ -1,0 +1,16 @@
+/local_doc/
+/locald_doc/
+/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+/build/
+/dist/
+/vendor/
+/artifacts/
+*.egg-info/
+.DS_Store
+:memory:
+.env
+*.pem
