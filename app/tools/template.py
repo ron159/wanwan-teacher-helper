@@ -19,6 +19,12 @@ def validate_options(options):
                                 (options.date, 40, '日期'), (options.body, 1500, '正文')]:
         if len(text) > limit or any(ord(c) < 32 and c not in '\n\t' for c in text):
             raise ValueError(f'{label}过长或包含不可用字符，上限 {limit} 字')
+    if any('\n' in text or '\r' in text for text in (options.title, options.class_name, options.date)):
+        raise ValueError('标题、班级和日期请使用单行文本')
+    if options.layout == 'photo_pptx' and (len(options.body) > 100 or len(options.body.splitlines()) > 2):
+        raise ValueError('课件说明最多 100 字、2 行，避免文字溢出')
+    if options.layout == 'photo_docx' and len(options.body.splitlines()) > 3:
+        raise ValueError('照片材料说明最多 3 行，避免文字溢出')
     if not options.title.strip():
         raise ValueError('请填写标题')
     if options.layout in {'notice', 'week'} and not options.body.strip():
@@ -59,9 +65,15 @@ def run(request, emit, cancel):
             with Image.open(data) as image:
                 width, height = image.size
             data.seek(0)
-            scale = min(11 / width, 5.5 / height)
+            scale = min(11 / width, (4.8 if options.body else 5.5) / height)
             slide.shapes.add_picture(data, Inches((13.333 - width * scale) / 2), Inches(1.25),
                                      width=Inches(width * scale), height=Inches(height * scale))
+            if options.body:
+                caption = slide.shapes.add_textbox(Inches(.65), Inches(6.15), Inches(12), Inches(.65))
+                caption.text_frame.word_wrap = True
+                caption.text_frame.text = options.body
+                for paragraph in caption.text_frame.paragraphs:
+                    paragraph.font.size = PptPt(14)
             footer = slide.shapes.add_textbox(Inches(.6), Inches(6.9), Inches(12), Inches(.4))
             footer.text_frame.text = f'{options.class_name}  {options.date}  ·  {index}'
             emit(Progress(index, len(request.inputs), '正在生成照片课件'))

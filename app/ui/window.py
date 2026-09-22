@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, Q
 from app.core.contracts import JobRequest
 from app.registry import TOOLS
 from app.ui.forms import OptionsForm
+from app.ui.photo_preview import PhotoPreviewDialog
 from app.ui.worker import JobWorker
 from app.ui.theme import STYLE
 from app.resources import resource
@@ -117,6 +118,8 @@ class MainWindow(QMainWindow):
         for widget in [self.up_button, self.down_button, self.remove_button, self.clear_button]:
             order.addWidget(widget)
         order.addStretch()
+        self.photo_preview_button = button('查看照片效果', self.preview_photo)
+        order.addWidget(self.photo_preview_button)
         queue_layout.addLayout(order)
         splitter.addWidget(queue_panel)
         self.forms = QStackedWidget()
@@ -178,6 +181,7 @@ class MainWindow(QMainWindow):
         self.title.setText(TOOLS[key][0])
         self.subtitle.setText(TOOLS[key][1])
         self.forms.setCurrentIndex(index)
+        self.photo_preview_button.setVisible(key == 'photo')
 
     def is_busy(self):
         return self.worker is not None
@@ -240,6 +244,16 @@ class MainWindow(QMainWindow):
             self.refresh_queue()
             self.table.selectRow(row + delta)
 
+    def preview_photo(self):
+        row = self.table.currentRow()
+        if row < 0 and self.paths:
+            row = 0
+        if row < 0:
+            self.status.setText('请先添加并选择一张照片')
+            return
+        dialog = PhotoPreviewDialog(self.paths[row], self.form_widgets['photo'].options(), self)
+        dialog.exec()
+
     def choose_output(self):
         folder = QFileDialog.getExistingDirectory(self, '选择结果保存目录', self.output.text())
         if folder:
@@ -275,7 +289,7 @@ class MainWindow(QMainWindow):
     def set_busy(self, busy):
         for widget in [self.nav, self.forms, self.add_button, self.folder_button, self.up_button,
                        self.down_button, self.remove_button, self.clear_button, self.output,
-                       self.output_select, self.start_button]:
+                       self.output_select, self.start_button, self.photo_preview_button]:
             widget.setEnabled(not busy)
         self.cancel_button.setEnabled(busy)
 

@@ -114,3 +114,13 @@ def test_pdf_split_cancel_retains_completed_results(tmp_path, monkeypatch):
                      lambda p: None, stop)
     assert [r.status for r in result] == ['success', 'cancelled']
     assert result[0].output.is_file()
+
+
+def test_slide_contains_teacher_caption(tmp_path):
+    source = tmp_path / 'photo.png'
+    Image.new('RGB', (100, 100), 'white').save(source)
+    caption = '孩子们一起观察落叶'
+    result = template.run(JobRequest('template', (source,), tmp_path / 'out',
+        TemplateOptions('photo_pptx', body=caption)), lambda p: None, Event())
+    texts = [shape.text for shape in Presentation(result[0].output).slides[0].shapes if shape.has_text_frame]
+    assert caption in texts

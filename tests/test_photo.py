@@ -32,3 +32,21 @@ def test_animation_is_skipped(tmp_path):
     result = run(JobRequest('photo', (path,), tmp_path / 'out', PhotoOptions()),
                  lambda p: None, Event())
     assert result[0].status == 'skipped'
+
+
+def test_template_transparency_composites_on_white(tmp_path):
+    from app.tools.photo import normalized_bytes
+    path = tmp_path / 'transparent.png'
+    Image.new('RGBA', (10, 10), (0, 0, 0, 0)).save(path)
+    with Image.open(normalized_bytes(path)) as result:
+        assert min(result.getpixel((5, 5))) > 245
+
+
+def test_preview_uses_selected_dimensions_without_writing(tmp_path):
+    from app.ui.photo_preview import preview_images
+    path = tmp_path / 'source.jpg'
+    Image.new('RGB', (400, 300)).save(path)
+    original = path.read_bytes()
+    before, after, original_size, prepared = preview_images(path, PhotoOptions(max_edge=200))
+    assert before and after and original_size == (400, 300) and prepared == (200, 150)
+    assert path.read_bytes() == original and len(list(tmp_path.iterdir())) == 1

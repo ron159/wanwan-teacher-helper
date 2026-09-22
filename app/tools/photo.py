@@ -35,8 +35,10 @@ def normalized_bytes(source, max_edge=1600):
     with load_photo(source) as image:
         image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
         buffer = BytesIO()
-        image.convert('RGB').save(buffer, format='JPEG', quality=90,
-                                  icc_profile=image.info.get('icc_profile'))
+        with image.convert('RGBA') as rgba, Image.new('RGB', image.size, 'white') as canvas:
+            canvas.paste(rgba, mask=rgba.getchannel('A'))
+            canvas.save(buffer, format='JPEG', quality=90,
+                        icc_profile=image.info.get('icc_profile'))
         buffer.seek(0)
         return buffer
 
