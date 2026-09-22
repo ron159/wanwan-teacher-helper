@@ -28,7 +28,8 @@ def fetch():
         archive = staging / 'download.zip'
         urllib.request.urlretrieve(lock['url'], archive)
         with archive.open('rb') as stream:
-            assert hashlib.file_digest(stream, 'sha256').hexdigest() == lock['sha256'], 'Archive hash mismatch'
+            if hashlib.file_digest(stream, 'sha256').hexdigest() != lock['sha256']:
+                raise ValueError('Archive hash mismatch')
         unpack = staging / 'ffmpeg'
         unpack.mkdir()
         with ZipFile(archive) as zip_file:

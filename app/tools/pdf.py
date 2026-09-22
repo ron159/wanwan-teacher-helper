@@ -1,9 +1,10 @@
 from contextlib import ExitStack
 from io import BytesIO
 from pypdf import PdfReader, PdfWriter
-from app.core.contracts import PdfOptions, Progress
-from app.core.jobs import validate_inputs, success
-from app.core.safe_output import SafeOutputWriter, check_cancel
+from PIL import Image
+from app.core.contracts import PdfOptions, Progress, FileResult
+from app.core.jobs import validate_inputs, success, friendly_error
+from app.core.safe_output import SafeOutputWriter, check_cancel, Cancelled
 from app.tools.photo import load_photo
 
 
@@ -62,16 +63,17 @@ def run(request, emit, cancel):
         raise ValueError('旋转角度应为 90、180 或 270')
     if options.mode in {'split', 'extract', 'rotate'} and len(request.inputs) != 1:
         raise ValueError('拆分、抽页和旋转每次请选择一个 PDF')
+    if len(request.inputs) > 200 or sum(p.stat().st_size for p in request.inputs) > 512 * 1024**2:
+        raise ValueError('单次最多 200 个文件，输入总量最多 512 MB')
     results = []
     with ExitStack() as stack:
         writer = PdfWriter()
-        readers = []
         for index, source in enumerate(request.inputs, 1):
             check_cancel(cancel)
             if options.mode == 'images':
                 with load_photo(source) as image:
                     image.thumbnail((2480, 3508))
-                    page = __import__('PIL.Image', fromlist=['Image']).new('RGB', (2480, 3508), 'white')
+                    page = Image.new('RGB', (2480, 3508), 'white')
                     picture = image.convert('RGBA')
                     page.paste(picture, ((2480 - picture.width) // 2, (3508 - picture.height) // 2), picture)
                     buffer = stack.enter_context(BytesIO())
@@ -83,16 +85,26 @@ def run(request, emit, cancel):
                 if source.suffix.lower() != '.pdf' or source.stat().st_size > 512 * 1024**2:
                     raise ValueError('请选择 512 MB 以内的 PDF 文件')
                 reader = checked_reader(stack.enter_context(source.open('rb')))
-            readers.append(reader)
             selected = parse_pages(options.pages, len(reader.pages))
             if options.mode == 'split':
                 for number in selected:
-                    check_cancel(cancel)
                     single = PdfWriter()
-                    single.add_page(reader.pages[number])
-                    output = save_pdf(single, request.output_dir / f'{source.stem[:80]}_第{number + 1}页.pdf', request.inputs, cancel)
-                    results.append(success(source, output, f'已拆分第 {number + 1} 页'))
-                    single.close()
+                    try:
+                        check_cancel(cancel)
+                        single.add_page(reader.pages[number])
+                        output = save_pdf(single, request.output_dir / f'{source.stem[:80]}_第{number + 1}页.pdf', request.inputs, cancel)
+                        results.append(success(source, output, f'已拆分第 {number + 1} 页'))
+                    except Cancelled:
+                        results.append(FileResult(source, None, 'cancelled',
+                            f'第 {number + 1} 页起已取消；之前完成的页面保留'))
+                        break
+                    except MemoryError:
+                        raise
+                    except Exception as exc:
+                        results.append(FileResult(source, None, 'failed',
+                            f'第 {number + 1} 页失败：{friendly_error(exc)}'))
+                    finally:
+                        single.close()
             else:
                 numbers = selected if options.mode == 'extract' else range(len(reader.pages))
                 for number in numbers:

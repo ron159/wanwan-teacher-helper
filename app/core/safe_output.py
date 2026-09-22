@@ -46,7 +46,8 @@ class SafeOutputWriter:
             validate(self.path)
         if cancel:
             check_cancel(cancel)
-        with self.path.open('rb') as stream:
+        # Windows FlushFileBuffers requires a writable handle.
+        with self.path.open('r+b') as stream:
             os.fsync(stream.fileno())
         for number in range(10000):
             target = self.destination if number == 0 else self.destination.with_name(

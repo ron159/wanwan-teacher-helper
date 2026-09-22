@@ -39,12 +39,15 @@ def run(request, emit, cancel):
             iterator = ws.iter_rows()
             header_cells = next(iterator, ())
             header = tuple(cell.value for cell in header_cells)
-            if (not header or any(not isinstance(x, str) or not x.strip() for x in header)
+            if (not header or any(cell.data_type == 'f' for cell in header_cells)
+                    or any(not isinstance(x, str) or not x.strip() for x in header)
                     or len(set(header)) != len(header)):
                 raise ValueError('首行必须是非空、不重复的字段名')
             if expected is None:
                 expected = header
                 output.append([*header, '来源序号'])
+                for cell in output[1]:
+                    cell.data_type = 's'
             elif header != expected:
                 raise ValueError(f'第 {index} 个文件字段或顺序不同，未生成汇总')
             cached_rows = iter(cached[name].iter_rows()) if cached else None
@@ -67,7 +70,7 @@ def run(request, emit, cancel):
                     values.append(value)
                 output.append([*values, index])
                 for col, original in enumerate(cells, 1):
-                    target = output.cell(output.max_row, col)
+                    target = output.cell(rows + 2, col)
                     target.number_format = original.number_format
                     if isinstance(target.value, str):
                         target.data_type = 's'

@@ -26,6 +26,10 @@ def validate_options(options):
     names = [line.strip() for line in options.names.splitlines() if line.strip()]
     if options.layout in {'labels', 'certificate'} and not names:
         raise ValueError('请填写姓名，每行一位')
+    if options.layout.startswith('photo_') and len(options.body) > 180:
+        raise ValueError('照片说明最多 180 字，请精简后生成')
+    if any(any(ord(c) < 32 for c in name) for name in names):
+        raise ValueError('姓名包含不可用控制字符')
     if len(names) > 200 or any(len(name) > 20 for name in names):
         raise ValueError('最多 200 位姓名，每位不超过 20 字')
     return names
@@ -84,7 +88,7 @@ def run(request, emit, cancel):
                 data.seek(0)
                 scale = min(16 / w, 18 / h)
                 document.add_picture(data, width=Cm(w * scale), height=Cm(h * scale))
-                document.add_paragraph(f'照片 {index}' + (f' · {options.body[:180]}' if options.body else ''))
+                document.add_paragraph(f'照片 {index}' + (f' · {options.body}' if options.body else ''))
                 emit(Progress(index, len(request.inputs), '正在生成 A4 照片材料'))
         elif options.layout == 'labels':
             table = document.add_table(rows=0, cols=2)

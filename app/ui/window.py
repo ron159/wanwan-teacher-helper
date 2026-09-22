@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence
+from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence, QIcon
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QListWidget, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
     QLineEdit, QStackedWidget, QScrollArea, QProgressBar, QMessageBox, QDialog,
@@ -11,6 +11,7 @@ from app.registry import TOOLS
 from app.ui.forms import OptionsForm
 from app.ui.worker import JobWorker
 from app.ui.theme import STYLE
+from app.resources import resource
 
 
 def label(text, name=None):
@@ -33,6 +34,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('丸丸小帮手 · 离线教师文件助手')
+        self.setWindowIcon(QIcon(str(resource('assets/icon.png'))))
         self.resize(1200, 820)
         self.setMinimumSize(940, 660)
         self.setStyleSheet(STYLE)
@@ -251,6 +253,10 @@ class MainWindow(QMainWindow):
 
     def launch(self, request, preview_only=False):
         self.pending = None
+        if not preview_only:
+            self.results = ()
+            self.last_report = None
+            self.refresh_queue()
         self.worker = JobWorker(request, preview_only, self)
         self.worker.progress.connect(self.on_progress)
         self.worker.completed.connect(self.on_completed)

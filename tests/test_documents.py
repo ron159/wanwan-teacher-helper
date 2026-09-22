@@ -69,3 +69,48 @@ def test_controlled_templates(tmp_path, layout):
         assert len(Presentation(result[0].output).slides) == 1
     else:
         assert Document(result[0].output).paragraphs[0].text == options.title
+
+
+def test_excel_header_cannot_become_formula(tmp_path):
+    source = tmp_path / 'headers.xlsx'
+    wb = Workbook()
+    wb.active.append(['=1+1', '姓名'])
+    wb.active['A1'].data_type = 's'
+    wb.active.append(['001', '测试'])
+    wb.save(source)
+    req = JobRequest('sheet', (source,), tmp_path / 'out', SheetOptions())
+    result = sheet.run(req, lambda p: None, Event())
+    out = load_workbook(result[0].output)
+    assert out.active['A1'].value == '=1+1' and out.active['A1'].data_type == 's'
+    out.close()
+    wb.active['A1'] = '=1+1'
+    wb.save(source)
+    with pytest.raises(ValueError, match='首行'):
+        sheet.run(req, lambda p: None, Event())
+
+
+def test_template_rejects_overflowing_caption_and_control_name(tmp_path):
+    options = TemplateOptions('photo_docx', body='长' * 181)
+    with pytest.raises(ValueError):
+        template.validate_options(options)
+    with pytest.raises(ValueError):
+        template.validate_options(TemplateOptions('labels', names='坏\x01名字'))
+
+
+def test_pdf_split_cancel_retains_completed_results(tmp_path, monkeypatch):
+    source = tmp_path / 'pages.pdf'
+    writer = PdfWriter()
+    writer.add_blank_page(100, 100)
+    writer.add_blank_page(100, 100)
+    writer.write(source)
+    stop = Event()
+    original = pdf.save_pdf
+    def save_and_cancel(*args):
+        path = original(*args)
+        stop.set()
+        return path
+    monkeypatch.setattr(pdf, 'save_pdf', save_and_cancel)
+    result = pdf.run(JobRequest('pdf', (source,), tmp_path / 'out', PdfOptions('split')),
+                     lambda p: None, stop)
+    assert [r.status for r in result] == ['success', 'cancelled']
+    assert result[0].output.is_file()
