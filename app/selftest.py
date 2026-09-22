@@ -6,6 +6,8 @@ import hashlib
 import json
 import subprocess
 import time
+import os
+import ctypes
 from PIL import Image
 from docx import Document
 from openpyxl import Workbook
@@ -82,5 +84,6 @@ def run_selftest(root: Path):
     window.grab().save(str(root / 'ui.png'))
     window.close()
     (root / 'self-test.json').write_text(json.dumps({'status': 'passed', 'cases': len(cases),
-        'elapsed_seconds': round(time.monotonic() - started, 2), 'originals_unchanged': True,
+        'elapsed_seconds': round(time.monotonic() - started, 2),
+        'is_admin': ctypes.windll.shell32.IsUserAnAdmin() != 0 if os.name == 'nt' else os.geteuid() == 0, 'originals_unchanged': True,
         'results': records}, default=str, ensure_ascii=False, indent=2), encoding='utf-8')

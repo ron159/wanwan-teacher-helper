@@ -59,3 +59,40 @@ def test_no_gain_does_not_publish(tmp_path):
                  lambda p: None, Event())
     assert result[0].status == 'skipped'
     assert not list((tmp_path / 'out').glob('*')) if (tmp_path / 'out').exists() else True
+
+
+def test_duplicate_names_symlink_and_external_entity_rejected(tmp_path):
+    from zipfile import ZipInfo
+    from app.tools.office import check_zip
+    from defusedxml.common import DefusedXmlException
+    import warnings
+    path = tmp_path / 'malicious.docx'
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', UserWarning)
+        with ZipFile(path, 'w') as z:
+            z.writestr('same', 'a')
+            z.writestr('same', 'b')
+    with ZipFile(path) as z, pytest.raises(ValueError):
+        check_zip(z)
+    info = ZipInfo('link')
+    info.create_system = 3
+    info.external_attr = 0o120777 << 16
+    with ZipFile(path, 'w') as z:
+        z.writestr(info, '/etc/passwd')
+    with ZipFile(path) as z, pytest.raises(ValueError):
+        check_zip(z)
+    with ZipFile(path, 'w') as z:
+        z.writestr('[Content_Types].xml', '<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><Types>&x;</Types>')
+        z.writestr('_rels/.rels', '<Relationships/>')
+        z.writestr('word/document.xml', '<document/>')
+    with pytest.raises((ValueError, DefusedXmlException)):
+        inspect_package(path)
+
+
+def test_document_jpeg_metadata_is_not_discarded():
+    from app.tools.office import optimized_jpeg
+    exif = Image.Exif()
+    exif[274] = 6
+    buffer = BytesIO()
+    Image.new('RGB', (100, 100)).save(buffer, 'JPEG', exif=exif, quality=100)
+    assert optimized_jpeg(buffer.getvalue(), 70) is None

@@ -32,6 +32,8 @@ python main.py --self-test artifacts/smoke
 
 macOS/Linux 开发环境的影音测试可使用 PATH 中的 ffmpeg/ffprobe；发行 Windows EXE 只使用哈希验证的随包引擎。代码不含运行时联网下载、遥测或上传逻辑。
 
+CLI 默认只预览：`python main.py --tool photo --input 照片.jpg --output 输出目录`；核对后追加 `--execute`。各工具使用同一执行接口，`--options` 可传入参数 JSON。
+
 Windows 构建：
 
 ```powershell
@@ -46,6 +48,6 @@ CI 在 Windows 执行测试，然后分别启动目录版和单 EXE，使用合�
 
 仅支持白名单格式；不支持旧 DOC/PPT、宏、加密/签名 Office、任意 Office 转 PDF、OCR、人脸识别或自动教育评价。文档结构校验不能替代 Office/WPS 打开、字体换行、动画与打印的人工复核。首次发布为试用版本，尚不代表园所生产验收。
 
-未配置商业代码签名证书，发行 EXE 暂未 Authenticode 签名；请从本仓库下载并核对 SHA-256。Windows 干净普通用户、断网实机与真实 Office/WPS 样本验收需在对应环境执行，不能由 macOS 测试替代。
+未配置商业代码签名证书，发行 EXE 暂未 Authenticode 签名；请从本仓库下载并核对 SHA-256。CI 额外使用新建的非管理员账户、移除 Python 的 PATH，并为 EXE 设置出站防火墙阻断执行烟测；影音引擎只允许本地协议。物理断网实机与真实 Office/WPS 样本验收仍需在对应环境执行。
 
 第三方许可证、库替换与重建说明见 [licenses/NOTICE.md](licenses/NOTICE.md)。本地白皮书目录 `local_doc/` 和 `locald_doc/` 均不上传。

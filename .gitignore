@@ -20,3 +20,5 @@ __pycache__/
 /licenses/ffmpeg-build.txt
 /licenses/ffmpeg-license.txt
 /*.spec
+
+/assets/version.json

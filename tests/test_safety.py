@@ -38,3 +38,18 @@ def test_cancel_and_unsafe_names():
         with pytest.raises(ValueError):
             safe_name(name)
     assert safe_name('春游照片') == '春游照片'
+
+
+def test_validation_failure_and_precommit_cancel_cleanup(tmp_path):
+    target = tmp_path / 'result.txt'
+    with pytest.raises(ValueError):
+        with SafeOutputWriter(target) as writer:
+            writer.path.write_text('bad')
+            writer.commit(lambda _: (_ for _ in ()).throw(ValueError('validation')))
+    stop = Event()
+    with pytest.raises(Cancelled):
+        with SafeOutputWriter(target) as writer:
+            writer.path.write_text('complete but cancelled')
+            stop.set()
+            writer.commit(cancel=stop)
+    assert not list(tmp_path.iterdir())

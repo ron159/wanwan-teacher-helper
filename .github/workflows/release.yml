@@ -50,6 +50,9 @@ jobs:
           $env:PATH = $saved
           if ($p.ExitCode -ne 0) { throw "Single EXE smoke failed: $($p.ExitCode)" }
           if (!(Test-Path artifacts/onefile-smoke/self-test.json)) { throw 'Smoke report missing' }
+      - name: Standard user smoke with outbound network blocked
+        shell: pwsh
+        run: ./scripts/standard_user_smoke.ps1
       - name: Prepare release assets
         shell: pwsh
         run: |
@@ -61,6 +64,7 @@ jobs:
           Copy-Item licenses/ffmpeg-build.txt artifacts/release/ffmpeg-build.txt
           Copy-Item artifacts/onefile-smoke/self-test.json artifacts/release/windows-self-test.json
           Copy-Item artifacts/onefile-smoke/ui.png artifacts/release/windows-ui.png
+          Copy-Item artifacts/standard-user-smoke/self-test.json artifacts/release/standard-user-self-test.json
           Get-ChildItem artifacts/release -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content artifacts/release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -75,6 +79,7 @@ jobs:
             artifacts/tests.xml
             artifacts/*-smoke/self-test.json
             artifacts/*-smoke/ui.png
+            artifacts/*-smoke/failure.txt
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: windows

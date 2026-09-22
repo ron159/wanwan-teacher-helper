@@ -1,6 +1,7 @@
 from pathlib import Path
 import argparse
 import os
+import json
 import subprocess
 import sys
 
@@ -14,6 +15,9 @@ def build(mode):
     from notices import generate
     fetch()
     generate()
+    version = os.environ.get('GITHUB_REF_NAME', 'development')
+    commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    (ROOT / 'assets/version.json').write_text(json.dumps({'version': version, 'commit': commit}), encoding='utf-8')
     name = 'WanwanTeacherHelper' if mode == 'onefile' else 'WanwanTeacherHelperDebug'
     args = [sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm', '--noupx',
             '--windowed', f'--{mode}', '--name', name, '--icon', str(ROOT / 'assets/icon.ico'),

@@ -35,6 +35,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('丸丸小帮手 · 离线教师文件助手')
         self.setWindowIcon(QIcon(str(resource('assets/icon.png'))))
+        try:
+            version = json.loads(resource('assets/version.json').read_text(encoding='utf-8'))['version']
+            self.setWindowTitle(f'丸丸小帮手 {version} · 离线教师文件助手')
+        except FileNotFoundError:
+            pass
         self.resize(1200, 820)
         self.setMinimumSize(940, 660)
         self.setStyleSheet(STYLE)
