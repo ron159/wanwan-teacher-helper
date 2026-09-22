@@ -16,6 +16,7 @@ from app.tools.photo import MAX_PIXELS
 MAX_MEMBER = 256 * 1024 * 1024
 MAX_TOTAL = 2 * 1024**3
 MAX_XML = 16 * 1024 * 1024
+MAX_JPEG = 32 * 1024 * 1024
 
 
 def check_zip(archive, cancel=None):
@@ -113,6 +114,8 @@ def inspect_package(source, cancel=None):
 
 
 def optimized_jpeg(data, quality):
+    if len(data) > MAX_JPEG:
+        return None
     try:
         with Image.open(BytesIO(data)) as image:
             if (image.format != 'JPEG' or image.mode not in {'RGB', 'L'}
@@ -121,9 +124,16 @@ def optimized_jpeg(data, quality):
                     or image.getexif() or image.info.get('icc_profile')
                     or image.info.get('xmp') or image.info.get('comment')):
                 return None
+            for marker, payload in image.applist:
+                if (marker != 'APP0' or not payload.startswith(b'JFIF\0')
+                        or len(payload) != 14 or payload[7] not in {0, 1}
+                        or payload[12:] != b'\0\0'
+                        or (payload[7] == 0 and payload[8:12] != b'\0\1\0\1')):
+                    return None
             image.load()
             buffer = BytesIO()
-            image.save(buffer, 'JPEG', quality=quality, optimize=True, subsampling='keep')
+            image.save(buffer, 'JPEG', quality=quality, optimize=True, subsampling='keep',
+                       dpi=image.info.get('dpi', (0, 0)))
             result = buffer.getvalue()
             return result if len(result) < len(data) else None
     except Exception:
@@ -153,7 +163,7 @@ def process(source, request, index, cancel):
             for info in before.infolist():
                 check_cancel(cancel)
                 replacement = None
-                if info.filename in details['jpeg_candidates']:
+                if info.filename in details['jpeg_candidates'] and info.file_size <= MAX_JPEG:
                     replacement = optimized_jpeg(before.read(info), request.options.quality)
                 cloned = copy(info)
                 if replacement:

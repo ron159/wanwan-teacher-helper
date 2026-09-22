@@ -96,3 +96,13 @@ def test_document_jpeg_metadata_is_not_discarded():
     buffer = BytesIO()
     Image.new('RGB', (100, 100)).save(buffer, 'JPEG', exif=exif, quality=100)
     assert optimized_jpeg(buffer.getvalue(), 70) is None
+
+
+def test_complex_jpeg_app_metadata_is_preserved_by_skipping():
+    from app.tools.office import optimized_jpeg
+    buffer = BytesIO()
+    Image.effect_noise((100, 100), 80).convert('RGB').save(buffer, 'JPEG', quality=100)
+    raw = buffer.getvalue()
+    payload = b'Photoshop 3.0\x00IPTC metadata'
+    tagged = raw[:2] + b'\xff\xed' + (len(payload) + 2).to_bytes(2, 'big') + payload + raw[2:]
+    assert optimized_jpeg(tagged, 70) is None

@@ -3,6 +3,10 @@ import sys
 
 
 def main():
+    if '--startup-probe' in sys.argv:
+        from pathlib import Path
+        from app.startup_probe import run_startup_probe
+        return run_startup_probe(Path(sys.argv[sys.argv.index('--startup-probe') + 1]))
     if '--self-test' in sys.argv:
         from app.selftest import run_selftest
         from pathlib import Path

@@ -1,4 +1,3 @@
-import hashlib
 import json
 import math
 import os
@@ -6,30 +5,25 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from functools import lru_cache
 from app.core.contracts import FileResult, MediaOptions
 from app.core.jobs import validate_inputs, run_files, success
 from app.core.safe_output import SafeOutputWriter, check_cancel
 from app.resources import resource
+from app.core.engine_cache import prepare_engine
+from threading import Event
 
 
-@lru_cache(maxsize=1)
-def engines():
+def engines(cancel=None):
+    cancel = cancel if cancel is not None else Event()
     if not getattr(sys, 'frozen', False) and os.name != 'nt':
-        # Development only; distributed Windows builds always use verified bundled engines.
         found = tuple(shutil.which(name) for name in ('ffmpeg', 'ffprobe'))
         if all(found):
             return found
-    manifest = json.loads(resource('vendor/ffmpeg/manifest.json').read_text(encoding='utf-8'))
-    base = resource('vendor/ffmpeg/manifest.json').parent
-    for item in manifest['files']:
-        path = (base / item['path']).resolve()
-        if not path.is_relative_to(base.resolve()) or path.is_symlink() or not path.is_file():
-            raise ValueError('随包影音引擎文件不完整')
-        with path.open('rb') as stream:
-            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-        if digest != item['sha256']:
-            raise ValueError('随包影音引擎校验失败，请重新下载完整版本')
+    manifest = resource('vendor/ffmpeg/manifest.json')
+    local = os.environ.get('LOCALAPPDATA')
+    if not local:
+        raise ValueError('无法定位当前用户的应用数据目录')
+    base = prepare_engine(manifest, Path(local) / 'WanwanTeacherHelper' / 'engines', cancel)
     return str(base / 'bin/ffmpeg.exe'), str(base / 'bin/ffprobe.exe')
 
 
@@ -62,7 +56,7 @@ def execute(args, cancel, timeout=3600):
 
 
 def probe(path, cancel):
-    _, ffprobe = engines()
+    _, ffprobe = engines(cancel)
     return json.loads(execute([ffprobe, '-v', 'error', '-protocol_whitelist', 'file,pipe',
                               '-show_entries', 'format=duration:stream=codec_type,width,height',
                               '-of', 'json', str(Path(path).resolve())], cancel, 30))
@@ -82,7 +76,7 @@ def process(source, request, index, cancel):
         raise ValueError('开始时间超过素材时长')
     if options.duration and options.start + options.duration > duration + .1:
         raise ValueError('裁剪结束时间超过素材时长')
-    ffmpeg, _ = engines()
+    ffmpeg, _ = engines(cancel)
     suffix = '.mp4' if video else ('.wav' if options.mode == 'wav' else '.m4a')
     with SafeOutputWriter(request.output_dir / f'{source.stem[:80]}_分享{suffix}', request.inputs) as writer:
         args = [ffmpeg, '-v', 'error', '-nostdin', '-y', '-protocol_whitelist', 'file,pipe',
@@ -119,5 +113,5 @@ def run(request, emit, cancel):
             or not 144 <= o.max_height <= 2160 or not 2 <= o.quality <= 15
             or not all(math.isfinite(x) and x >= 0 for x in (o.start, o.duration))):
         raise ValueError('影音参数无效')
-    engines()
+    engines(cancel)
     return run_files(request, process, emit, cancel)
