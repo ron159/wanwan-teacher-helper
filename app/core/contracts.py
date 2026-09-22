@@ -51,7 +51,7 @@ class SheetOptions:
 class MediaOptions:
     mode: str = 'video'
     max_height: int = 720
-    quality: int = 26
+    quality: int = 5
     start: float = 0
     duration: float = 0
 

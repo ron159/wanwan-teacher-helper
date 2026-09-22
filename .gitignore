@@ -14,3 +14,9 @@ __pycache__/
 :memory:
 .env
 *.pem
+/licenses/generated/
+/licenses/sbom.cdx.json
+/licenses/ffmpeg-manifest.json
+/licenses/ffmpeg-build.txt
+/licenses/ffmpeg-license.txt
+/*.spec

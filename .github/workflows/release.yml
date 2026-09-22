@@ -1,0 +1,92 @@
+name: Windows build and release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+      - name: Install locked dependencies
+        run: python -m pip install --only-binary=:all: -r requirements-lock.txt
+      - name: Fetch and verify bundled media engine
+        run: python scripts/fetch_ffmpeg.py
+      - name: Static checks
+        run: python -m ruff check .
+      - name: Functional and desktop tests
+        run: python -m pytest -q --junitxml=artifacts/tests.xml
+      - name: Build directory distribution
+        run: python scripts/build.py onedir
+      - name: Smoke test directory distribution
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist/WanwanTeacherHelperDebug/WanwanTeacherHelperDebug.exe -ArgumentList '--self-test', 'artifacts/onedir-smoke' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Directory smoke failed: $($p.ExitCode)" }
+          if (!(Test-Path artifacts/onedir-smoke/self-test.json)) { throw 'Smoke report missing' }
+      - name: Build single executable
+        run: python scripts/build.py onefile
+      - name: Smoke test single executable without Python on PATH
+        shell: pwsh
+        run: |
+          $saved = $env:PATH
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $p = Start-Process -FilePath dist/WanwanTeacherHelper.exe -ArgumentList '--self-test', 'artifacts/onefile-smoke' -Wait -PassThru
+          $env:PATH = $saved
+          if ($p.ExitCode -ne 0) { throw "Single EXE smoke failed: $($p.ExitCode)" }
+          if (!(Test-Path artifacts/onefile-smoke/self-test.json)) { throw 'Smoke report missing' }
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/release | Out-Null
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'snapshot' }
+          Copy-Item dist/WanwanTeacherHelper.exe "artifacts/release/WanwanTeacherHelper-$version-windows-x64.exe"
+          Compress-Archive -Path licenses/* -DestinationPath artifacts/release/third-party-licenses.zip
+          Copy-Item licenses/sbom.cdx.json artifacts/release/sbom.cdx.json
+          Copy-Item licenses/ffmpeg-build.txt artifacts/release/ffmpeg-build.txt
+          Copy-Item artifacts/onefile-smoke/self-test.json artifacts/release/windows-self-test.json
+          Copy-Item artifacts/onefile-smoke/ui.png artifacts/release/windows-ui.png
+          Get-ChildItem artifacts/release -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content artifacts/release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: artifacts/release/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-validation
+          path: |
+            artifacts/tests.xml
+            artifacts/*-smoke/self-test.json
+            artifacts/*-smoke/ui.png
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --title "丸丸小帮手 $GITHUB_REF_NAME" --notes-file packaging/release-notes.md --prerelease --verify-tag
