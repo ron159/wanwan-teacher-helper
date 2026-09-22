@@ -1,5 +1,4 @@
 from pathlib import Path
-from threading import Event
 from app.core.contracts import FileResult, JobRequest, Progress
 from app.core.safe_output import Cancelled, check_cancel
 

@@ -1,4 +1,3 @@
-from pathlib import Path
 from threading import Event
 import pytest
 from app.core.safe_output import SafeOutputWriter, Cancelled, check_cancel, safe_name
