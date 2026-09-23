@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -41,6 +43,21 @@ jobs:
           if (!(Test-Path artifacts/onedir-smoke/self-test.json)) { throw 'Smoke report missing' }
       - name: Build single executable
         run: python scripts/build.py onefile
+      - name: Sign and verify production release
+        # This exact unsigned preview was explicitly authorized by the repository owner.
+        if: startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/tags/v0.2.0-preview.1'
+        shell: pwsh
+        env:
+          WANWAN_SIGNING_PFX_BASE64: ${{ secrets.WANWAN_SIGNING_PFX_BASE64 }}
+          WANWAN_SIGNING_PFX_PASSWORD: ${{ secrets.WANWAN_SIGNING_PFX_PASSWORD }}
+          WANWAN_SIGNING_THUMBPRINT: ${{ vars.WANWAN_SIGNING_THUMBPRINT }}
+          WANWAN_TIMESTAMP_URL: ${{ vars.WANWAN_TIMESTAMP_URL }}
+        run: ./scripts/sign_release.ps1
+      - name: Record authorized unsigned trial
+        if: github.ref == 'refs/tags/v0.2.0-preview.1'
+        shell: pwsh
+        run: |
+          @{ status = 'UnsignedPreview'; version = $env:GITHUB_REF_NAME; reason = 'User-authorized unsigned trial; Office/WPS visual and print acceptance remains incomplete' } | ConvertTo-Json | Set-Content artifacts/signature.json -Encoding utf8
       - name: Smoke test single executable without Python on PATH
         shell: pwsh
         run: |
@@ -50,7 +67,7 @@ jobs:
           $env:PATH = $saved
           if ($p.ExitCode -ne 0) { throw "Single EXE smoke failed: $($p.ExitCode)" }
           if (!(Test-Path artifacts/onefile-smoke/self-test.json)) { throw 'Smoke report missing' }
-      - name: Standard user smoke with outbound network blocked
+      - name: All-mode offline standard-user acceptance
         shell: pwsh
         run: ./scripts/standard_user_smoke.ps1
       - name: Prepare release assets
@@ -65,6 +82,8 @@ jobs:
           Copy-Item artifacts/onefile-smoke/self-test.json artifacts/release/windows-self-test.json
           Copy-Item artifacts/onefile-smoke/ui.png artifacts/release/windows-ui.png
           Copy-Item artifacts/standard-user-smoke/self-test.json artifacts/release/standard-user-self-test.json
+          Copy-Item artifacts/standard-user-smoke/deployment-acceptance.json artifacts/release/deployment-acceptance.json
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { Copy-Item artifacts/signature.json artifacts/release/signature.json }
           Get-ChildItem artifacts/release -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content artifacts/release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -80,6 +99,9 @@ jobs:
             artifacts/*-smoke/self-test.json
             artifacts/*-smoke/ui.png
             artifacts/*-smoke/failure.txt
+            artifacts/*-smoke/deployment-acceptance.json
+            artifacts/*-smoke/startup-probe.json
+            artifacts/*-smoke/startup-failure.txt
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: windows

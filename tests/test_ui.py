@@ -3,6 +3,16 @@ from app.ui.window import MainWindow
 from PySide6.QtCore import Qt
 
 
+def test_default_output_uses_system_documents_location(qtbot, tmp_path, monkeypatch):
+    from PySide6.QtCore import QStandardPaths
+    redirected = tmp_path / '重定向文档'
+    monkeypatch.setattr(QStandardPaths, 'writableLocation', lambda _: str(redirected))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window.output.text() == str(redirected / '丸丸小帮手输出')
+    assert not redirected.exists()  # Selecting a default must not create folders.
+
+
 def test_photo_user_flow_and_all_navigation(qtbot, tmp_path, monkeypatch):
     window = MainWindow()
     qtbot.addWidget(window)

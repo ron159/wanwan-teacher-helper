@@ -1,3 +1,4 @@
+import math
 from docx import Document
 from docx.shared import Cm, Pt
 from docx.oxml.ns import qn
@@ -41,6 +42,32 @@ def validate_options(options):
     return names
 
 
+def set_slide_text(shape, text, preferred, minimum, wrap=False):
+    frame = shape.text_frame
+    frame.margin_left = frame.margin_right = Inches(.08)
+    frame.margin_top = frame.margin_bottom = Inches(.025)
+    frame.word_wrap = wrap
+    width = (shape.width - frame.margin_left - frame.margin_right) / 12700
+    height = (shape.height - frame.margin_top - frame.margin_bottom) / 12700
+    chosen = None
+    for size in range(preferred, minimum - 1, -1):
+        # Reserve 1.2 em per character, including full-width Chinese glyphs.
+        lines = sum(max(1, math.ceil(len(line) * size * 1.2 / width))
+                    for line in text.split('\n')) if wrap else 1
+        fits_width = wrap or max((len(line) for line in text.split('\n')), default=0) * size * 1.2 <= width
+        if fits_width and lines * size * 1.25 <= height:
+            chosen = size
+            break
+    if chosen is None:
+        raise ValueError('文字超出固定课件版式，请缩短标题、说明或页脚')
+    frame.text = text
+    for paragraph in frame.paragraphs:
+        paragraph.font.name = 'Microsoft YaHei'
+        paragraph.font.size = PptPt(chosen)
+        paragraph.space_before = paragraph.space_after = PptPt(0)
+        paragraph.line_spacing = 1.25
+
+
 def run(request, emit, cancel):
     options = request.options
     names = validate_options(options)
@@ -59,8 +86,7 @@ def run(request, emit, cancel):
             check_cancel(cancel)
             slide = document.slides.add_slide(document.slide_layouts[6])
             heading = slide.shapes.add_textbox(Inches(.6), Inches(.3), Inches(12), Inches(.7))
-            heading.text_frame.text = options.title
-            heading.text_frame.paragraphs[0].font.size = PptPt(28)
+            set_slide_text(heading, options.title, 28, 14)
             data = normalized_bytes(source)
             with Image.open(data) as image:
                 width, height = image.size
@@ -70,12 +96,9 @@ def run(request, emit, cancel):
                                      width=Inches(width * scale), height=Inches(height * scale))
             if options.body:
                 caption = slide.shapes.add_textbox(Inches(.65), Inches(6.15), Inches(12), Inches(.65))
-                caption.text_frame.word_wrap = True
-                caption.text_frame.text = options.body
-                for paragraph in caption.text_frame.paragraphs:
-                    paragraph.font.size = PptPt(14)
+                set_slide_text(caption, options.body, 14, 11, wrap=True)
             footer = slide.shapes.add_textbox(Inches(.6), Inches(6.9), Inches(12), Inches(.4))
-            footer.text_frame.text = f'{options.class_name}  {options.date}  ·  {index}'
+            set_slide_text(footer, f'{options.class_name}  {options.date}  ·  {index}', 12, 8)
             emit(Progress(index, len(request.inputs), '正在生成照片课件'))
     else:
         document = Document()

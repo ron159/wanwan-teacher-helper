@@ -124,3 +124,14 @@ def test_slide_contains_teacher_caption(tmp_path):
         TemplateOptions('photo_pptx', body=caption)), lambda p: None, Event())
     texts = [shape.text for shape in Presentation(result[0].output).slides[0].shapes if shape.has_text_frame]
     assert caption in texts
+
+
+def test_ppt_long_chinese_title_and_footer_use_bounded_font(tmp_path):
+    source = tmp_path / 'photo.jpg'
+    Image.new('RGB', (100, 100)).save(source)
+    opts = TemplateOptions('photo_pptx', title='长' * 40, class_name='班' * 30, date='日' * 40)
+    result = template.run(JobRequest('template', (source,), tmp_path / 'out', opts), lambda _: None, Event())
+    slide = Presentation(result[0].output).slides[0]
+    text_shapes = [shape for shape in slide.shapes if shape.has_text_frame]
+    assert text_shapes[0].text_frame.paragraphs[0].font.size.pt <= 18
+    assert text_shapes[-1].text_frame.paragraphs[0].font.size.pt <= 10

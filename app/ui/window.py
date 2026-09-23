@@ -1,6 +1,6 @@
 from pathlib import Path
 import json
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QStandardPaths
 from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence, QIcon
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QListWidget, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
@@ -142,7 +142,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(splitter, 1)
         output_row = QHBoxLayout()
         output_row.addWidget(label('保存到'))
-        self.output = QLineEdit(str(Path.home() / 'Documents' / '丸丸小帮手输出'))
+        documents = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation))
+        self.output = QLineEdit(str(documents / '丸丸小帮手输出'))
         self.output.setAccessibleName('输出目录')
         self.output_select = button('选择目录', self.choose_output)
         output_row.addWidget(self.output, 1)
