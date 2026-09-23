@@ -44,7 +44,8 @@ jobs:
       - name: Build single executable
         run: python scripts/build.py onefile
       - name: Sign and verify production release
-        if: startsWith(github.ref, 'refs/tags/v')
+        # This exact unsigned preview was explicitly authorized by the repository owner.
+        if: startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/tags/v0.2.0-preview.1'
         shell: pwsh
         env:
           WANWAN_SIGNING_PFX_BASE64: ${{ secrets.WANWAN_SIGNING_PFX_BASE64 }}
@@ -52,6 +53,11 @@ jobs:
           WANWAN_SIGNING_THUMBPRINT: ${{ vars.WANWAN_SIGNING_THUMBPRINT }}
           WANWAN_TIMESTAMP_URL: ${{ vars.WANWAN_TIMESTAMP_URL }}
         run: ./scripts/sign_release.ps1
+      - name: Record authorized unsigned trial
+        if: github.ref == 'refs/tags/v0.2.0-preview.1'
+        shell: pwsh
+        run: |
+          @{ status = 'UnsignedPreview'; version = $env:GITHUB_REF_NAME; reason = 'User-authorized unsigned trial; Office/WPS visual and print acceptance remains incomplete' } | ConvertTo-Json | Set-Content artifacts/signature.json -Encoding utf8
       - name: Smoke test single executable without Python on PATH
         shell: pwsh
         run: |
