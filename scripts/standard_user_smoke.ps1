@@ -10,14 +10,17 @@ $savedEnvironment = @{}
 foreach ($key in @('TEMP', 'TMP', 'PATH', 'LOCALAPPDATA')) { $savedEnvironment[$key] = [Environment]::GetEnvironmentVariable($key) }
 $profiles = Get-NetFirewallProfile | Select-Object Name, Enabled
 
-function Test-ExternalConnection([string] $address) {
-    $client = [System.Net.Sockets.TcpClient]::new()
-    try {
-        $pending = $client.BeginConnect($address, 443, $null, $null)
-        if (!$pending.AsyncWaitHandle.WaitOne(2000)) { return $false }
-        $client.EndConnect($pending)
-        return $client.Connected
-    } catch { return $false } finally { $client.Dispose() }
+function Test-UserConnection([string] $address) {
+    $networkResult = Join-Path $base 'network-result.json'
+    Remove-Item $networkResult -ErrorAction SilentlyContinue
+    $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $p = Start-Process -FilePath $powershell -ArgumentList '-NoProfile', '-File', $networkProbe, $address, $networkResult -Credential $credential -LoadUserProfile -PassThru
+    if (!$p.WaitForExit(120000)) {
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        throw 'User network probe timed out'
+    }
+    if ($p.ExitCode -ne 0 -or !(Test-Path $networkResult)) { throw 'User network probe failed to produce evidence' }
+    return (Get-Content $networkResult -Raw | ConvertFrom-Json).connected
 }
 
 function Invoke-UserProbe([string] $mode, [string] $folder) {
@@ -40,8 +43,23 @@ try {
     Copy-Item dist/WanwanTeacherHelper.exe $executable
     & icacls $base /grant "${account}:(OI)(CI)M" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to grant smoke output permission' }
+    $credential = [pscredential]::new("$env:COMPUTERNAME\$account", $secure)
+    $networkProbe = Join-Path $base 'network-probe.ps1'
+    @'
+param([string]$Address, [string]$Result)
+$connected = $false
+$client = [System.Net.Sockets.TcpClient]::new()
+try {
+    $pending = $client.BeginConnect($Address, 443, $null, $null)
+    if ($pending.AsyncWaitHandle.WaitOne(2000)) {
+        $client.EndConnect($pending)
+        $connected = $client.Connected
+    }
+} catch { $connected = $false } finally { $client.Dispose() }
+@{ connected = $connected } | ConvertTo-Json | Set-Content $Result
+'@ | Set-Content $networkProbe
     $address = (Resolve-DnsName api.github.com -Type A | Where-Object IPAddress | Select-Object -First 1).IPAddress
-    if (!(Test-ExternalConnection $address)) { throw 'Cannot establish online baseline for offline test' }
+    if (!(Test-UserConnection $address)) { throw 'Cannot establish online baseline for offline test' }
 
     # Recover connectivity even if the acceptance process is terminated unexpectedly.
     $restore = Join-Path $base 'restore-network.ps1'
@@ -52,31 +70,33 @@ try {
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5)
     Register-ScheduledTask -TaskName $watchdog -Action $action -Trigger $trigger -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
     Set-NetFirewallProfile -Profile Domain, Private, Public -Enabled True
-    # Blocks every process, including extracted FFmpeg/ffprobe, on this ephemeral runner.
-    New-NetFirewallRule -DisplayName $rule -Direction Outbound -Action Block -Profile Any | Out-Null
-    if (Test-ExternalConnection $address) { throw 'Outbound connection unexpectedly succeeded while blocked' }
+    # Block every process for the test identity, including extracted engines.
+    # The separate CI controller account must retain its heartbeat connection.
+    $sid = (Get-LocalUser -Name $account).SID.Value
+    New-NetFirewallRule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -LocalUser "D:(A;;CC;;;$sid)" | Out-Null
+    if (Test-UserConnection $address) { throw 'Outbound connection unexpectedly succeeded while blocked' }
     $env:TEMP = Join-Path $base 'temp'
     $env:TMP = $env:TEMP
     $env:LOCALAPPDATA = Join-Path $base 'localappdata'
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-    $credential = [pscredential]::new("$env:COMPUTERNAME\$account", $secure)
     $probeFolder = Join-Path $base 'startup'
     $launch = Invoke-UserProbe '--startup-probe' $probeFolder
     $startup = Get-Content (Join-Path $probeFolder 'startup-probe.json') -Raw | ConvertFrom-Json
-    if (!$startup.frozen -or $startup.is_admin) { throw 'Invalid ordinary-user frozen startup report' }
+    if (!$startup.frozen -or $startup.is_admin -or !$startup.default_output_writable) { throw 'Invalid ordinary-user frozen startup report' }
     $secondLaunch = Invoke-UserProbe '--startup-probe' $probeFolder
     $secondStartup = Get-Content (Join-Path $probeFolder 'startup-probe.json') -Raw | ConvertFrom-Json
-    if (!$secondStartup.frozen -or $secondStartup.is_admin) { throw 'Invalid repeat startup report' }
+    if (!$secondStartup.frozen -or $secondStartup.is_admin -or !$secondStartup.default_output_writable) { throw 'Invalid repeat startup report' }
     $resultsFolder = Join-Path $base 'results'
     $null = Invoke-UserProbe '--self-test' $resultsFolder
     $report = Get-Content (Join-Path $resultsFolder 'self-test.json') -Raw | ConvertFrom-Json
     if ($report.status -ne 'passed' -or $report.is_admin -ne $false) { throw 'Expected passing non-admin acceptance' }
-    if (Test-ExternalConnection $address) { throw 'Network block was lost during acceptance' }
+    if (Test-UserConnection $address) { throw 'Network block was lost during acceptance' }
     $cacheBytes = (Get-ChildItem $env:LOCALAPPDATA -File -Recurse | Measure-Object Length -Sum).Sum
     $remainingExtraction = @(Get-ChildItem $env:TEMP -Directory -Filter '_MEI*').Count
     if ($remainingExtraction -ne 0) { throw 'Onefile extraction directory was not cleaned' }
     @{
-        all_processes_outbound_blocked = $true
+        all_test_user_processes_outbound_blocked = $true
+        network_isolation_scope = 'test-user SID, all executables and ports'
         online_probe_succeeded_before_block = $true
         offline_probe_failed_during_block = $true
         launch_to_ui_ready_seconds = [math]::Round($startup.ui_ready_unix - $launch, 3)
@@ -84,6 +104,8 @@ try {
         extracted_bundle_bytes = $startup.bundle_bytes
         engine_cache_bytes = $cacheBytes
         temporary_extraction_cleaned = $true
+        default_output_directory = $startup.default_output_directory
+        default_output_writable = $startup.default_output_writable
         admin = $false
         cases = $report.cases
     } | ConvertTo-Json | Set-Content (Join-Path $resultsFolder 'deployment-acceptance.json')
