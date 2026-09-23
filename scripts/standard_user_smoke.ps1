@@ -7,7 +7,9 @@ $rule = 'Wanwan offline acceptance ' + [guid]::NewGuid().ToString('N')
 $watchdog = 'Wanwan-network-recovery'
 $executable = Join-Path $base 'WanwanTeacherHelper.exe'
 $savedEnvironment = @{}
-foreach ($key in @('TEMP', 'TMP', 'PATH', 'LOCALAPPDATA')) { $savedEnvironment[$key] = [Environment]::GetEnvironmentVariable($key) }
+foreach ($key in @('TEMP', 'TMP', 'PATH', 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'USERNAME', 'USERDOMAIN')) {
+    $savedEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)
+}
 $profiles = Get-NetFirewallProfile | Select-Object Name, Enabled
 
 function Test-UserConnection([string] $address) {
@@ -60,6 +62,17 @@ try {
 '@ | Set-Content $networkProbe
     $address = (Resolve-DnsName api.github.com -Type A | Where-Object IPAddress | Select-Object -First 1).IPAddress
     if (!(Test-UserConnection $address)) { throw 'Cannot establish online baseline for offline test' }
+    # -Credential changes the token but inherits the controller environment.
+    # The first probe loads the profile; read its registered path instead of guessing.
+    $sid = (Get-LocalUser -Name $account).SID.Value
+    $profilePath = (Get-CimInstance Win32_UserProfile -Filter "SID='$sid'").LocalPath
+    if (!$profilePath -or !(Test-Path $profilePath)) { throw 'Standard-user profile was not initialized' }
+    $env:USERPROFILE = $profilePath
+    $env:APPDATA = Join-Path $profilePath 'AppData\Roaming'
+    $env:HOMEDRIVE = [IO.Path]::GetPathRoot($profilePath).TrimEnd('\')
+    $env:HOMEPATH = $profilePath.Substring($env:HOMEDRIVE.Length)
+    $env:USERNAME = $account
+    $env:USERDOMAIN = $env:COMPUTERNAME
 
     # Recover connectivity even if the acceptance process is terminated unexpectedly.
     $restore = Join-Path $base 'restore-network.ps1'
@@ -72,7 +85,6 @@ try {
     Set-NetFirewallProfile -Profile Domain, Private, Public -Enabled True
     # Block every process for the test identity, including extracted engines.
     # The separate CI controller account must retain its heartbeat connection.
-    $sid = (Get-LocalUser -Name $account).SID.Value
     New-NetFirewallRule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -LocalUser "D:(A;;CC;;;$sid)" | Out-Null
     if (Test-UserConnection $address) { throw 'Outbound connection unexpectedly succeeded while blocked' }
     $env:TEMP = Join-Path $base 'temp'
