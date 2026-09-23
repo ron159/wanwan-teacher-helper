@@ -122,3 +122,43 @@ def test_macro_and_signature_rejection_reaches_specific_guard(tmp_path, member):
     assert result[0].status == 'failed'
     assert source.read_bytes() == original
     assert not list((tmp_path / 'out').glob('*'))
+
+
+def test_ppt_optimization_preserves_reuse_crop_transparency_and_animation(tmp_path):
+    from pptx import Presentation
+    from pptx.util import Inches
+    from pptx.oxml.xmlchemy import OxmlElement
+    photo = tmp_path / 'photo.jpg'
+    Image.effect_noise((600, 400), 100).convert('RGB').save(photo, quality=100)
+    transparent = tmp_path / 'transparent.png'
+    Image.new('RGBA', (40, 40), (255, 0, 0, 64)).save(transparent)
+    animated = tmp_path / 'animated.gif'
+    Image.new('RGB', (30, 30), 'red').save(animated, save_all=True,
+        append_images=[Image.new('RGB', (30, 30), 'blue')], duration=200, loop=0)
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[6])
+    picture = slide.shapes.add_picture(str(photo), Inches(0), Inches(0), width=Inches(2))
+    picture.crop_left = .2
+    slide.shapes.add_picture(str(photo), Inches(3), Inches(0), width=Inches(2))
+    slide.shapes.add_picture(str(transparent), Inches(0), Inches(3))
+    slide.shapes.add_picture(str(animated), Inches(2), Inches(3))
+    transition = OxmlElement('p:transition')
+    transition.append(OxmlElement('p:fade'))
+    slide.element.append(transition)
+    source = tmp_path / 'mixed.pptx'
+    deck.save(source)
+    original = source.read_bytes()
+    result = run(JobRequest('office', (source,), tmp_path / 'out', OfficeOptions(True, 70)),
+                 lambda _: None, Event())
+    assert result[0].status == 'success'
+    with ZipFile(source) as before, ZipFile(result[0].output) as after:
+        assert before.namelist() == after.namelist()
+        jpeg = [n for n in before.namelist() if n.startswith('ppt/media/') and n.endswith(('.jpg', '.jpeg'))]
+        assert len(jpeg) == 1  # OOXML deduplicates the twice-used picture.
+        for name in before.namelist():
+            if name not in jpeg:
+                assert before.read(name) == after.read(name), name
+        assert after.testzip() is None
+    reopened = Presentation(result[0].output)
+    assert reopened.slides[0].shapes[0].crop_left == .2
+    assert source.read_bytes() == original
