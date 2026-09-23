@@ -14,6 +14,8 @@ __pycache__/
 :memory:
 .env
 *.pem
+*.pfx
+*.p12
 /licenses/generated/
 /licenses/sbom.cdx.json
 /licenses/ffmpeg-manifest.json

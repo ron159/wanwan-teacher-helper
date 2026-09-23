@@ -106,3 +106,19 @@ def test_complex_jpeg_app_metadata_is_preserved_by_skipping():
     payload = b'Photoshop 3.0\x00IPTC metadata'
     tagged = raw[:2] + b'\xff\xed' + (len(payload) + 2).to_bytes(2, 'big') + payload + raw[2:]
     assert optimized_jpeg(tagged, 70) is None
+
+
+@pytest.mark.parametrize('member', ['_xmlsignatures/sig1.xml', 'word/vbaProject.bin'])
+def test_macro_and_signature_rejection_reaches_specific_guard(tmp_path, member):
+    source = tmp_path / 'document.docx'
+    Document().save(source)
+    with ZipFile(source, 'a') as archive:
+        archive.writestr(member, '<Signature/>' if member.endswith('.xml') else b'macro-marker')
+    original = source.read_bytes()
+    with pytest.raises(ValueError, match='签名或宏'):
+        inspect_package(source)
+    result = run(JobRequest('office', (source,), tmp_path / 'out', OfficeOptions(True)),
+                 lambda p: None, Event())
+    assert result[0].status == 'failed'
+    assert source.read_bytes() == original
+    assert not list((tmp_path / 'out').glob('*'))

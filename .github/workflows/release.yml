@@ -43,6 +43,15 @@ jobs:
           if (!(Test-Path artifacts/onedir-smoke/self-test.json)) { throw 'Smoke report missing' }
       - name: Build single executable
         run: python scripts/build.py onefile
+      - name: Sign and verify production release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          WANWAN_SIGNING_PFX_BASE64: ${{ secrets.WANWAN_SIGNING_PFX_BASE64 }}
+          WANWAN_SIGNING_PFX_PASSWORD: ${{ secrets.WANWAN_SIGNING_PFX_PASSWORD }}
+          WANWAN_SIGNING_THUMBPRINT: ${{ vars.WANWAN_SIGNING_THUMBPRINT }}
+          WANWAN_TIMESTAMP_URL: ${{ vars.WANWAN_TIMESTAMP_URL }}
+        run: ./scripts/sign_release.ps1
       - name: Smoke test single executable without Python on PATH
         shell: pwsh
         run: |
@@ -68,6 +77,7 @@ jobs:
           Copy-Item artifacts/onefile-smoke/ui.png artifacts/release/windows-ui.png
           Copy-Item artifacts/standard-user-smoke/self-test.json artifacts/release/standard-user-self-test.json
           Copy-Item artifacts/standard-user-smoke/deployment-acceptance.json artifacts/release/deployment-acceptance.json
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { Copy-Item artifacts/signature.json artifacts/release/signature.json }
           Get-ChildItem artifacts/release -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content artifacts/release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:

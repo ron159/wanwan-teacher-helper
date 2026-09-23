@@ -50,3 +50,16 @@ def test_preview_uses_selected_dimensions_without_writing(tmp_path):
     before, after, original_size, prepared = preview_images(path, PhotoOptions(max_edge=200))
     assert before and after and original_size == (400, 300) and prepared == (200, 150)
     assert path.read_bytes() == original and len(list(tmp_path.iterdir())) == 1
+
+
+def test_real_srgb_profile_survives_resize(tmp_path):
+    from PIL import ImageCms
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+    source = tmp_path / 'profile.jpg'
+    Image.new('RGB', (300, 200), 'red').save(source, icc_profile=profile)
+    result = run(JobRequest('photo', (source,), tmp_path / 'out', PhotoOptions(max_edge=100)),
+                 lambda p: None, Event())
+    assert result[0].status == 'success'
+    with Image.open(result[0].output) as output:
+        assert output.info['icc_profile'] == profile
+        assert output.size == (100, 67)

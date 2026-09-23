@@ -64,6 +64,9 @@ try {
     $launch = Invoke-UserProbe '--startup-probe' $probeFolder
     $startup = Get-Content (Join-Path $probeFolder 'startup-probe.json') -Raw | ConvertFrom-Json
     if (!$startup.frozen -or $startup.is_admin) { throw 'Invalid ordinary-user frozen startup report' }
+    $secondLaunch = Invoke-UserProbe '--startup-probe' $probeFolder
+    $secondStartup = Get-Content (Join-Path $probeFolder 'startup-probe.json') -Raw | ConvertFrom-Json
+    if (!$secondStartup.frozen -or $secondStartup.is_admin) { throw 'Invalid repeat startup report' }
     $resultsFolder = Join-Path $base 'results'
     $null = Invoke-UserProbe '--self-test' $resultsFolder
     $report = Get-Content (Join-Path $resultsFolder 'self-test.json') -Raw | ConvertFrom-Json
@@ -77,6 +80,7 @@ try {
         online_probe_succeeded_before_block = $true
         offline_probe_failed_during_block = $true
         launch_to_ui_ready_seconds = [math]::Round($startup.ui_ready_unix - $launch, 3)
+        repeat_launch_to_ui_ready_seconds = [math]::Round($secondStartup.ui_ready_unix - $secondLaunch, 3)
         extracted_bundle_bytes = $startup.bundle_bytes
         engine_cache_bytes = $cacheBytes
         temporary_extraction_cleaned = $true
