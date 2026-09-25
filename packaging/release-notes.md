@@ -1,4 +1,4 @@
-丸丸小帮手 Windows 预览版。
+丸丸小帮手 Windows 未签名自用预览版。EXE 未做 Authenticode 签名，下载时或首次启动时 Windows 可能提示未知发布者；请从本仓库 Release 下载并核对 SHA-256 清单。
 
 本次新增自动更新：每次正常启动后查询本仓库 GitHub Releases；发现新版本时提示，确认后下载 Windows EXE、核对发行 SHA-256 清单、替换旧程序并重新打开。文件处理仍在本地完成，不上传材料。离线时可继续使用现有版本。
 
