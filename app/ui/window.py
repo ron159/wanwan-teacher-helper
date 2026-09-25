@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import shutil
 from PySide6.QtCore import Qt, QUrl, QStandardPaths
 from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence, QIcon
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -228,13 +229,13 @@ class MainWindow(QMainWindow):
 
     def install_update(self, path, digest):
         if self.is_busy():
-            path.unlink(missing_ok=True)
-            path.parent.rmdir()
+            shutil.rmtree(path.parent, ignore_errors=True)
             self.update_error('当前任务仍在运行，请完成后重新启动软件更新。')
             return
         try:
             launch_replacement(path, digest)
         except Exception as exc:
+            shutil.rmtree(path.parent, ignore_errors=True)
             self.update_error(str(exc))
             return
         self.update_worker.wait(5000)
