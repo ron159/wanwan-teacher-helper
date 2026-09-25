@@ -31,8 +31,25 @@ def validate_image(path):
         image.verify()
 
 
-def normalized_bytes(source, max_edge=1600):
-    with load_photo(source) as image:
+def validate_direction(rotation, orientation):
+    if rotation not in (0, 90, 180, 270) or orientation not in {'original', 'landscape', 'portrait'}:
+        raise ValueError('请选择有效的旋转角度和横竖方向')
+
+
+def orient_photo(image, rotation=0, orientation='original'):
+    """Apply clockwise rotation after EXIF correction, then enforce aspect direction."""
+    validate_direction(rotation, orientation)
+    result = image.rotate(-rotation, expand=True)
+    if ((orientation == 'landscape' and result.width < result.height)
+            or (orientation == 'portrait' and result.width > result.height)):
+        turned = result.transpose(Image.Transpose.ROTATE_270)
+        result.close()
+        result = turned
+    return result
+
+
+def normalized_bytes(source, max_edge=1600, rotation=0, orientation='original'):
+    with load_photo(source) as original, orient_photo(original, rotation, orientation) as image:
         image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
         buffer = BytesIO()
         with image.convert('RGBA') as rgba, Image.new('RGB', image.size, 'white') as canvas:
@@ -49,7 +66,7 @@ def process(source, request, index, cancel):
         image = load_photo(source)
     except ValueError as exc:
         return FileResult(source, None, 'skipped', str(exc), source.stat().st_size)
-    with image:
+    with image, orient_photo(image, options.rotation, options.orientation) as image:
         check_cancel(cancel)
         image.thumbnail((options.max_edge, options.max_edge), Image.Resampling.LANCZOS)
         transparent = image.mode in {'RGBA', 'LA'} or 'transparency' in image.info
@@ -75,5 +92,6 @@ def run(request, emit, cancel):
     options = request.options
     if not isinstance(options, PhotoOptions) or not 1 <= options.max_edge <= 12000 or not 40 <= options.quality <= 100:
         raise ValueError('照片长边应为 1–12000，质量应为 40–100')
+    validate_direction(options.rotation, options.orientation)
     safe_name(options.prefix)
     return run_files(request, process, emit, cancel)

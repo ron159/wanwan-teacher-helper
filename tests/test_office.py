@@ -162,3 +162,41 @@ def test_ppt_optimization_preserves_reuse_crop_transparency_and_animation(tmp_pa
     reopened = Presentation(result[0].output)
     assert reopened.slides[0].shapes[0].crop_left == .2
     assert source.read_bytes() == original
+
+
+def test_aggressive_mode_shrinks_jpeg_and_png_without_changing_other_parts(tmp_path):
+    jpeg = tmp_path / 'large.jpg'
+    exif = Image.Exif()
+    exif[274] = 6
+    Image.effect_noise((1800, 1200), 100).convert('RGB').save(jpeg, quality=100, exif=exif)
+    png = tmp_path / 'large.png'
+    picture = Image.effect_noise((1400, 900), 80).convert('RGBA')
+    picture.putalpha(128)
+    picture.save(png)
+    document = Document()
+    document.add_paragraph('原有文字与版式')
+    document.add_picture(str(jpeg))
+    document.add_picture(str(png))
+    source = tmp_path / 'large.docx'
+    document.save(source)
+    original = source.read_bytes()
+
+    result = run(JobRequest('office', (source,), tmp_path / 'out', OfficeOptions(True, 45, True)),
+                 lambda _: None, Event())[0]
+    assert result.status == 'success'
+    assert result.output.stat().st_size < source.stat().st_size / 2
+    assert source.read_bytes() == original
+    with ZipFile(source) as before, ZipFile(result.output) as after:
+        assert before.namelist() == after.namelist()
+        changed = set(result.details['changed'])
+        assert changed == {'word/media/image1.jpg', 'word/media/image2.png'}
+        for name in before.namelist():
+            if name not in changed:
+                assert before.read(name) == after.read(name)
+        with Image.open(BytesIO(after.read('word/media/image1.jpg'))) as image:
+            assert image.format == 'JPEG' and image.size == (853, 1280)
+            assert not image.getexif() and not image.info.get('icc_profile')
+        with Image.open(BytesIO(after.read('word/media/image2.png'))) as image:
+            assert image.format == 'PNG' and max(image.size) <= 1280
+            assert image.convert('RGBA').getpixel((0, 0))[3] < 255
+    assert Document(result.output).paragraphs[0].text == '原有文字与版式'

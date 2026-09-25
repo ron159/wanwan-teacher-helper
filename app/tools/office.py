@@ -7,7 +7,7 @@ from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED, is_zipfile
 import hashlib
 import stat
 from defusedxml import ElementTree
-from PIL import Image
+from PIL import Image, ImageOps
 from app.core.contracts import FileResult, OfficeOptions
 from app.core.jobs import run_files, success, validate_inputs
 from app.core.safe_output import SafeOutputWriter, check_cancel
@@ -17,6 +17,9 @@ MAX_MEMBER = 256 * 1024 * 1024
 MAX_TOTAL = 2 * 1024**3
 MAX_XML = 16 * 1024 * 1024
 MAX_JPEG = 32 * 1024 * 1024
+MAX_AGGRESSIVE_IMAGE = 64 * 1024 * 1024
+AGGRESSIVE_MAX_EDGE = 1280
+AGGRESSIVE_PNG_COLORS = 64
 
 
 def check_zip(archive, cancel=None):
@@ -67,6 +70,7 @@ def inspect_package(source, cancel=None):
         raise ValueError('不是有效的 OOXML ZIP，可能已加密或损坏')
     categories = defaultdict(lambda: {'stored': 0, 'expanded': 0})
     candidates = []
+    png_candidates = []
     external_links = 0
     with ZipFile(source) as archive:
         infos = check_zip(archive, cancel)
@@ -106,9 +110,12 @@ def inspect_package(source, cancel=None):
                             check_cancel(cancel)
             if lower.startswith(('word/media/', 'ppt/media/')) and lower.endswith(('.jpg', '.jpeg')):
                 candidates.append(info.filename)
+            if lower.startswith(('word/media/', 'ppt/media/')) and lower.endswith('.png'):
+                png_candidates.append(info.filename)
     stored = sum(v['stored'] for v in categories.values())
     return {'categories': dict(categories), 'container_overhead': source.stat().st_size - stored,
-            'jpeg_candidates': candidates, 'external_links': external_links,
+            'jpeg_candidates': candidates, 'png_candidates': png_candidates,
+            'external_links': external_links,
             'largest': [{'part': i.filename, 'stored': i.compress_size} for i in
                         sorted(infos, key=lambda i: i.compress_size, reverse=True)[:10]]}
 
@@ -140,6 +147,37 @@ def optimized_jpeg(data, quality):
         return None
 
 
+def aggressive_image(data, suffix, quality):
+    if len(data) > MAX_AGGRESSIVE_IMAGE:
+        return None
+    expected = 'JPEG' if suffix in {'.jpg', '.jpeg'} else 'PNG'
+    try:
+        with Image.open(BytesIO(data)) as source:
+            if (source.format != expected or getattr(source, 'n_frames', 1) != 1
+                    or source.width * source.height > MAX_PIXELS
+                    or source.mode not in {'RGB', 'L', 'RGBA', 'LA', 'P'}):
+                return None
+            source.load()
+            with ImageOps.exif_transpose(source) as image:
+                image.thumbnail((AGGRESSIVE_MAX_EDGE, AGGRESSIVE_MAX_EDGE), Image.Resampling.LANCZOS)
+                output = BytesIO()
+                if expected == 'JPEG':
+                    with image.convert('RGB') as rgb:
+                        rgb.save(output, 'JPEG', quality=quality, subsampling=2,
+                                 progressive=True, optimize=True)
+                else:
+                    has_alpha = image.mode in {'RGBA', 'LA'} or 'transparency' in image.info
+                    with image.convert('RGBA' if has_alpha else 'RGB') as pixels:
+                        with pixels.quantize(colors=AGGRESSIVE_PNG_COLORS,
+                                             method=Image.Quantize.FASTOCTREE,
+                                             dither=Image.Dither.NONE) as reduced:
+                            reduced.save(output, 'PNG', optimize=True, compress_level=9)
+                result = output.getvalue()
+                return result if len(result) < len(data) else None
+    except Exception:
+        return None
+
+
 def stream_copy(source, target, cancel):
     digest = hashlib.sha256()
     while chunk := source.read(1024 * 1024):
@@ -156,15 +194,25 @@ def process(source, request, index, cancel):
         return FileResult(source, None, 'success', '诊断完成；未修改文档',
                           source.stat().st_size, details=details)
     hashes, changed = {}, []
-    destination = request.output_dir / f'{source.stem[:90]}_精简{source.suffix.lower()}'
+    aggressive = request.options.aggressive
+    suffix = '_激进精简' if aggressive else '_精简'
+    destination = request.output_dir / f'{source.stem[:90]}{suffix}{source.suffix.lower()}'
     with SafeOutputWriter(destination, request.inputs) as writer:
-        with ZipFile(source) as before, ZipFile(writer.path, 'w') as after:
+        with ZipFile(source) as before, ZipFile(writer.path, 'w',
+                                               compresslevel=9 if aggressive else None) as after:
             after.comment = before.comment
             for info in before.infolist():
                 check_cancel(cancel)
                 replacement = None
-                if info.filename in details['jpeg_candidates'] and info.file_size <= MAX_JPEG:
-                    replacement = optimized_jpeg(before.read(info), request.options.quality)
+                if (info.filename in details['jpeg_candidates']
+                        and info.file_size <= (MAX_AGGRESSIVE_IMAGE if aggressive else MAX_JPEG)):
+                    data = before.read(info)
+                    replacement = (aggressive_image(data, PurePosixPath(info.filename).suffix.lower(),
+                                                    request.options.quality) if aggressive
+                                   else optimized_jpeg(data, request.options.quality))
+                elif (aggressive and info.filename in details['png_candidates']
+                      and info.file_size <= MAX_AGGRESSIVE_IMAGE):
+                    replacement = aggressive_image(before.read(info), '.png', request.options.quality)
                 cloned = copy(info)
                 if replacement:
                     after.writestr(cloned, replacement)
@@ -173,8 +221,8 @@ def process(source, request, index, cancel):
                 else:
                     with before.open(info) as src, after.open(cloned, 'w') as dst:
                         hashes[info.filename] = stream_copy(src, dst, cancel)
-        if not changed or writer.path.stat().st_size >= source.stat().st_size:
-            return FileResult(source, None, 'skipped', '无需优化：无可安全缩小的 JPEG 或整体体积未减小',
+        if (not changed and not aggressive) or writer.path.stat().st_size >= source.stat().st_size:
+            return FileResult(source, None, 'skipped', '无需优化：可处理图片或整体体积未减小',
                               source.stat().st_size, details=details)
 
         def verify(path):
@@ -190,11 +238,18 @@ def process(source, request, index, cancel):
                             image.verify()
         output = writer.commit(verify, cancel)
     details['changed'] = changed
+    if aggressive:
+        message = (f'激进瘦身完成：优化 {len(changed)} 张图片；请复核画质和排版' if changed
+                   else '激进瘦身完成：已重新压缩包内成员；请复核文档')
+        return success(source, output, message, details)
     return success(source, output, f'已优化 {len(changed)} 张 JPEG；其余部件内容一致，请复核画面', details)
 
 
 def run(request, emit, cancel):
     validate_inputs(request)
-    if not isinstance(request.options, OfficeOptions) or not 40 <= request.options.quality <= 95:
-        raise ValueError('文档 JPEG 质量应为 40–95')
+    if (not isinstance(request.options, OfficeOptions)
+            or not 25 <= request.options.quality <= 95
+            or (not request.options.aggressive and request.options.quality < 40)
+            or (request.options.aggressive and not request.options.optimize)):
+        raise ValueError('文档瘦身选项无效：保守质量 40–95，激进质量 25–95')
     return run_files(request, process, emit, cancel)

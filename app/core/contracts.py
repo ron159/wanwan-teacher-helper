@@ -10,12 +10,15 @@ class PhotoOptions:
     quality: int = 85
     prefix: str = '照片'
     keep_metadata: bool = False
+    rotation: int = 0
+    orientation: str = 'original'
 
 
 @dataclass(frozen=True)
 class OfficeOptions:
     optimize: bool = False
     quality: int = 85
+    aggressive: bool = False
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,15 @@ class TemplateOptions:
     date: str = ''
     body: str = ''
     names: str = ''
+    rows: int = 3
+    columns: int = 2
+    page_orientation: str = 'portrait'
+    image_size_mode: str = 'auto'
+    image_width_cm: float = 7.0
+    image_height_cm: float = 5.0
+    keep_aspect_ratio: bool = True
+    rotation: int = 0
+    orientation: str = 'original'
 
 
 @dataclass(frozen=True)

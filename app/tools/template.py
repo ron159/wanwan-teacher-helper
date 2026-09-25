@@ -2,20 +2,51 @@ import math
 from docx import Document
 from docx.shared import Cm, Pt
 from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+from docx.enum.table import WD_ROW_HEIGHT_RULE, WD_CELL_VERTICAL_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_ORIENT
 from pptx import Presentation
 from pptx.util import Inches, Pt as PptPt
 from app.core.contracts import TemplateOptions, Progress
 from app.core.jobs import validate_inputs, success
 from app.core.safe_output import SafeOutputWriter, check_cancel
-from app.tools.photo import normalized_bytes
+from app.tools.photo import normalized_bytes, validate_direction
 from PIL import Image
 
 LAYOUTS = {'notice', 'week', 'labels', 'certificate', 'photo_docx', 'photo_pptx'}
 
 
+def photo_grid_geometry(options):
+    if any(type(value) is not int or not 1 <= value <= 10 for value in (options.rows, options.columns)):
+        raise ValueError('照片行数和列数应为 1–10 的整数')
+    if options.page_orientation not in {'portrait', 'landscape'}:
+        raise ValueError('请选择纸张纵向或横向')
+    if options.image_size_mode not in {'auto', 'manual'}:
+        raise ValueError('请选择自动适配或手动尺寸')
+    page_width, page_height = (21, 29.7) if options.page_orientation == 'portrait' else (29.7, 21)
+    # Reserve margins, heading, metadata, a bounded caption and paragraph spacing.
+    cell_width = (page_width - 4) / options.columns
+    cell_height = (page_height - 10.7) / options.rows
+    max_width, max_height = cell_width - .6, cell_height - 1
+    if min(max_width, max_height) < .5:
+        raise ValueError('行列过密，图片空间不足；请减少行数或列数')
+    width, height = max_width, max_height
+    if options.image_size_mode == 'manual':
+        width, height = options.image_width_cm, options.image_height_cm
+        if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in (width, height)):
+            raise ValueError('图片宽高必须为大于 0 的有限数值（厘米）')
+        if width > max_width + 1e-8 or height > max_height + 1e-8:
+            raise ValueError(f'手动尺寸超过当前版面，每张最多 {max_width:.2f} × {max_height:.2f} 厘米；请减小尺寸或减少行列')
+    return page_width, page_height, cell_width, cell_height, width, height
+
+
 def validate_options(options):
     if not isinstance(options, TemplateOptions) or options.layout not in LAYOUTS:
         raise ValueError('未知材料模板')
+    validate_direction(options.rotation, options.orientation)
+    if options.layout == 'photo_docx':
+        photo_grid_geometry(options)
     for text, limit, label in [(options.title, 40, '标题'), (options.class_name, 30, '班级'),
                                 (options.date, 40, '日期'), (options.body, 1500, '正文')]:
         if len(text) > limit or any(ord(c) < 32 and c not in '\n\t' for c in text):
@@ -87,7 +118,7 @@ def run(request, emit, cancel):
             slide = document.slides.add_slide(document.slide_layouts[6])
             heading = slide.shapes.add_textbox(Inches(.6), Inches(.3), Inches(12), Inches(.7))
             set_slide_text(heading, options.title, 28, 14)
-            data = normalized_bytes(source)
+            data = normalized_bytes(source, rotation=options.rotation, orientation=options.orientation)
             with Image.open(data) as image:
                 width, height = image.size
             data.seek(0)
@@ -104,6 +135,10 @@ def run(request, emit, cancel):
         document = Document()
         section = document.sections[0]
         section.page_width, section.page_height = Cm(21), Cm(29.7)
+        if options.layout == 'photo_docx':
+            page_width, page_height, cell_width, cell_height, box_width, box_height = photo_grid_geometry(options)
+            section.orientation = WD_ORIENT.LANDSCAPE if options.page_orientation == 'landscape' else WD_ORIENT.PORTRAIT
+            section.page_width, section.page_height = Cm(page_width), Cm(page_height)
         section.top_margin = section.bottom_margin = Cm(1.8)
         section.left_margin = section.right_margin = Cm(2)
         style = document.styles['Normal']
@@ -113,18 +148,50 @@ def run(request, emit, cancel):
         document.add_heading(options.title, 0)
         document.add_paragraph(f'{options.class_name}    {options.date}')
         if options.layout == 'photo_docx':
-            for index, source in enumerate(request.inputs, 1):
+            if options.body:
+                document.add_paragraph(options.body)
+            rows, columns = options.rows, options.columns
+            per_page = rows * columns
+            for offset in range(0, len(request.inputs), per_page):
                 check_cancel(cancel)
-                if index > 1:
+                if offset:
                     document.add_page_break()
-                data = normalized_bytes(source)
-                with Image.open(data) as image:
-                    w, h = image.size
-                data.seek(0)
-                scale = min(16 / w, 18 / h)
-                document.add_picture(data, width=Cm(w * scale), height=Cm(h * scale))
-                document.add_paragraph(f'照片 {index}' + (f' · {options.body}' if options.body else ''))
-                emit(Progress(index, len(request.inputs), '正在生成 A4 照片材料'))
+                table = document.add_table(rows=rows, cols=columns)
+                table.autofit = False
+                for column in table.columns:
+                    column.width = Cm(cell_width)
+                for row in table.rows:
+                    row.height = Cm(cell_height)
+                    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+                    row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
+                    for cell in row.cells:
+                        cell.width = Cm(cell_width)
+                        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                        paragraph = cell.paragraphs[0]
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        paragraph.paragraph_format.space_before = Pt(0)
+                        paragraph.paragraph_format.space_after = Pt(0)
+                        paragraph.paragraph_format.line_spacing = 1
+                for slot, source in enumerate(request.inputs[offset:offset + per_page]):
+                    check_cancel(cancel)
+                    data = normalized_bytes(source, rotation=options.rotation, orientation=options.orientation)
+                    with Image.open(data) as image:
+                        w, h = image.size
+                    data.seek(0)
+                    if options.image_size_mode == 'auto' or options.keep_aspect_ratio:
+                        scale = min(box_width / w, box_height / h)
+                        picture_width, picture_height = w * scale, h * scale
+                    else:
+                        picture_width, picture_height = box_width, box_height
+                    cell = table.cell(slot // columns, slot % columns)
+                    cell.paragraphs[0].add_run().add_picture(data, width=Cm(picture_width), height=Cm(picture_height))
+                    caption = cell.add_paragraph(f'照片 {offset + slot + 1}')
+                    caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    caption.paragraph_format.space_before = Pt(0)
+                    caption.paragraph_format.space_after = Pt(0)
+                    caption.paragraph_format.line_spacing = 1
+                    caption.runs[0].font.size = Pt(9)
+                    emit(Progress(offset + slot + 1, len(request.inputs), '正在生成 A4 照片材料'))
         elif options.layout == 'labels':
             table = document.add_table(rows=0, cols=2)
             table.style = 'Table Grid'

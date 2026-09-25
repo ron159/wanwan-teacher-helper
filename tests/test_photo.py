@@ -63,3 +63,26 @@ def test_real_srgb_profile_survives_resize(tmp_path):
     with Image.open(result[0].output) as output:
         assert output.info['icc_profile'] == profile
         assert output.size == (100, 67)
+
+
+def test_explicit_rotation_and_mixed_orientation(tmp_path):
+    from app.tools.photo import normalized_bytes
+    from app.ui.photo_preview import preview_images
+    source = tmp_path / 'arrow.png'
+    image = Image.new('RGB', (120, 60), 'white')
+    image.paste('red', (0, 0, 60, 60))
+    image.save(source)
+    original = source.read_bytes()
+    options = PhotoOptions(max_edge=120, rotation=90)
+    result = run(JobRequest('photo', (source,), tmp_path / 'out', options), lambda _: None, Event())
+    with Image.open(result[0].output) as output:
+        assert output.size == (60, 120)
+        assert output.getpixel((30, 20))[0] > 240
+        assert output.getpixel((30, 20))[1] < 30
+    assert preview_images(source, options)[3] == (60, 120)
+    portrait = tmp_path / 'portrait.png'
+    Image.new('RGB', (40, 100), 'blue').save(portrait)
+    for path in (source, portrait):
+        with Image.open(normalized_bytes(path, orientation='landscape')) as output:
+            assert output.width > output.height
+    assert source.read_bytes() == original

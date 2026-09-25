@@ -3,7 +3,7 @@ from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PIL import Image
-from app.tools.photo import load_photo
+from app.tools.photo import load_photo, orient_photo
 from app.core.jobs import friendly_error
 
 
@@ -15,12 +15,14 @@ def preview_images(source, options):
         first = BytesIO()
         before.save(first, 'PNG')
         before.close()
+        image = orient_photo(image, options.rotation, options.orientation)
         image.thumbnail((options.max_edge, options.max_edge), Image.Resampling.LANCZOS)
         prepared_size = image.size
         transparent = image.mode in {'RGBA', 'LA'} or 'transparency' in image.info
         encoded = BytesIO()
         image.convert('RGBA' if transparent else 'RGB').save(
             encoded, 'PNG' if transparent else 'JPEG', quality=options.quality)
+        image.close()
         encoded.seek(0)
         with Image.open(encoded) as after:
             after.thumbnail((560, 420), Image.Resampling.LANCZOS)
@@ -58,7 +60,7 @@ class PhotoPreviewDialog(QDialog):
         for pane in (self.before, self.after):
             pane.setAlignment(Qt.AlignmentFlag.AlignCenter)
             pane.setMinimumSize(300, 300)
-            pane.setStyleSheet('background: white; border: 1px solid #bdcfc2;')
+            pane.setObjectName('photoPane')
             panes.addWidget(pane)
         layout.addLayout(panes, 1)
         close = QPushButton('关闭')

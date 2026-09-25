@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import shutil
 from PySide6.QtCore import Qt, QUrl, QStandardPaths
-from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence, QIcon
+from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence, QIcon, QGuiApplication
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QListWidget, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
     QLineEdit, QStackedWidget, QScrollArea, QProgressBar, QMessageBox, QDialog,
@@ -13,7 +13,7 @@ from app.ui.forms import OptionsForm
 from app.ui.photo_preview import PhotoPreviewDialog
 from app.ui.worker import JobWorker
 from app.ui.update import UpdateWorker
-from app.ui.theme import STYLE
+from app.ui.theme import theme_style
 from app.resources import resource
 from app.updater import current_version, launch_replacement
 
@@ -46,7 +46,9 @@ class MainWindow(QMainWindow):
             pass
         self.resize(1200, 820)
         self.setMinimumSize(940, 660)
-        self.setStyleSheet(STYLE)
+        hints = QGuiApplication.styleHints()
+        self.apply_theme(hints.colorScheme())
+        hints.colorSchemeChanged.connect(self.apply_theme)
         self.setAcceptDrops(True)
         self.paths = []
         self.worker = None
@@ -188,6 +190,9 @@ class MainWindow(QMainWindow):
         self.update_worker.finished.connect(self.finish_update_worker)
         self.update_worker.start()
 
+    def apply_theme(self, scheme):
+        self.setStyleSheet(theme_style(scheme == Qt.ColorScheme.Dark))
+
     def finish_update_worker(self):
         worker = self.sender()
         if self.update_worker is worker:
@@ -279,7 +284,13 @@ class MainWindow(QMainWindow):
             return
         folder = QFileDialog.getExistingDirectory(self, '添加目录中的文件（不递归子目录）')
         if folder:
-            self.add_paths(sorted(Path(folder).iterdir()))
+            paths = sorted(Path(folder).iterdir())
+            photo_input = self.tool_id() == 'photo' or (
+                self.tool_id() == 'template'
+                and self.form_widgets['template'].options().layout.startswith('photo_'))
+            if photo_input:
+                paths = [p for p in paths if p.suffix.lower() in {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp'}]
+            self.add_paths(paths)
 
     def refresh_queue(self):
         self.table.setRowCount(len(self.paths))
@@ -460,7 +471,7 @@ class MainWindow(QMainWindow):
             '2. 设置参数与输出目录，预览后确认执行。\n'
             '3. 打开输出目录复核结果，原件不会被删除或覆盖。\n\n'
             '照片：默认去除 EXIF；透明图片输出 PNG。\n'
-            '文档：仅支持无宏/无签名/未加密的 DOCX 与 PPTX。JPEG 优化有损。\n'
+            '文档：仅支持无宏/无签名/未加密的 DOCX 与 PPTX。激进模式会缩小图片、降低色彩并移除图片元数据，请复核画面。\n'
             'PDF：不保留书签；表单、签名、注释/链接不处理。\n'
             '表格：首行为字段名；同顺序同字段才汇总。缓存公式值可能过时。\n'
             '模板：固定版式；请复核字体、换行与打印效果。\n'

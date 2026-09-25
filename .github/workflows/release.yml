@@ -44,8 +44,8 @@ jobs:
       - name: Build single executable
         run: python scripts/build.py onefile
       - name: Sign and verify production release
-        # Only these exact self-use preview tags are authorized without a signing certificate.
-        if: startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/tags/v0.2.0-preview.1' && github.ref != 'refs/tags/v0.2.0-preview.2'
+        # These exact self-use tags are authorized without a signing certificate.
+        if: startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/tags/v0.2.0-preview.1' && github.ref != 'refs/tags/v0.2.0-preview.2' && github.ref != 'refs/tags/v0.3.0'
         shell: pwsh
         env:
           WANWAN_SIGNING_PFX_BASE64: ${{ secrets.WANWAN_SIGNING_PFX_BASE64 }}
@@ -53,11 +53,12 @@ jobs:
           WANWAN_SIGNING_THUMBPRINT: ${{ vars.WANWAN_SIGNING_THUMBPRINT }}
           WANWAN_TIMESTAMP_URL: ${{ vars.WANWAN_TIMESTAMP_URL }}
         run: ./scripts/sign_release.ps1
-      - name: Record authorized unsigned trial
-        if: github.ref == 'refs/tags/v0.2.0-preview.1' || github.ref == 'refs/tags/v0.2.0-preview.2'
+      - name: Record authorized unsigned release
+        if: github.ref == 'refs/tags/v0.2.0-preview.1' || github.ref == 'refs/tags/v0.2.0-preview.2' || github.ref == 'refs/tags/v0.3.0'
         shell: pwsh
         run: |
-          @{ status = 'UnsignedPreview'; version = $env:GITHUB_REF_NAME; reason = 'User-authorized self-use preview without a signing certificate; Office/WPS visual and print acceptance remains incomplete' } | ConvertTo-Json | Set-Content artifacts/signature.json -Encoding utf8
+          $status = if ($env:GITHUB_REF_NAME -eq 'v0.3.0') { 'UnsignedSelfUse' } else { 'UnsignedPreview' }
+          @{ status = $status; version = $env:GITHUB_REF_NAME; reason = 'User-authorized self-use release without a signing certificate; Office/WPS visual and print acceptance remains incomplete' } | ConvertTo-Json | Set-Content artifacts/signature.json -Encoding utf8
       - name: Smoke test single executable without Python on PATH
         shell: pwsh
         run: |
@@ -117,4 +118,9 @@ jobs:
       - name: Publish verified release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --title "丸丸小帮手 $GITHUB_REF_NAME" --notes-file packaging/release-notes.md --prerelease --verify-tag
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release create "$GITHUB_REF_NAME" release/* --title "丸丸小帮手 $GITHUB_REF_NAME" --notes-file packaging/release-notes.md --prerelease --verify-tag
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --title "丸丸小帮手 $GITHUB_REF_NAME" --notes-file packaging/release-notes.md --verify-tag
+          fi

@@ -135,3 +135,65 @@ def test_ppt_long_chinese_title_and_footer_use_bounded_font(tmp_path):
     text_shapes = [shape for shape in slide.shapes if shape.has_text_frame]
     assert text_shapes[0].text_frame.paragraphs[0].font.size.pt <= 18
     assert text_shapes[-1].text_frame.paragraphs[0].font.size.pt <= 10
+
+
+@pytest.mark.parametrize('rows,columns,paper', [(1, 1, 'portrait'), (2, 1, 'portrait'), (2, 2, 'landscape'), (3, 2, 'portrait'), (2, 3, 'landscape')])
+def test_photo_word_grid_pagination_and_aspect(tmp_path, rows, columns, paper):
+    per_page = rows * columns
+    from docx.shared import Cm
+    from docx.oxml.ns import qn
+    import hashlib
+    images = []
+    for i in range(7):
+        path = tmp_path / f'{i}.png'
+        Image.new('RGB', (120, 60) if i % 2 else (40, 100), (i * 30, 50, 100)).save(path)
+        images.append(path)
+    before = [hashlib.sha256(p.read_bytes()).hexdigest() for p in images]
+    options = TemplateOptions(rows=rows, columns=columns, page_orientation=paper, orientation='landscape', body='活动照片')
+    result = template.run(JobRequest('template', tuple(images), tmp_path / 'out', options), lambda _: None, Event())
+    doc = Document(result[0].output)
+    expected_pages = (7 + per_page - 1) // per_page
+    assert len(doc.tables) == expected_pages
+    assert len(doc.inline_shapes) == 7
+    assert len(doc.element.xpath('.//w:br[@w:type="page"]')) == expected_pages - 1
+    page_width, page_height, _, _, max_width, max_height = template.photo_grid_geometry(options)
+    assert abs(doc.sections[0].page_width.cm - page_width) < .01
+    assert abs(doc.sections[0].page_height.cm - page_height) < .01
+    for table in doc.tables:
+        assert len(table.columns) == columns
+        assert len(table.rows) == per_page // columns
+        assert all(row._tr.trPr.find(qn('w:cantSplit')) is not None for row in table.rows)
+    for i, picture in enumerate(doc.inline_shapes):
+        assert abs(picture.width / picture.height - (2 if i % 2 else 2.5)) < .001
+        assert picture.width <= Cm(max_width)
+        assert picture.height <= Cm(max_height)
+    assert before == [hashlib.sha256(p.read_bytes()).hexdigest() for p in images]
+    with pytest.raises(ValueError, match='行数和列数'):
+        template.validate_options(TemplateOptions(rows=0))
+
+
+@pytest.mark.parametrize('keep,expected', [(True, (4, 2)), (False, (4, 3))])
+def test_manual_photo_dimensions(tmp_path, keep, expected):
+    source = tmp_path / 'wide.png'
+    Image.new('RGB', (200, 100), 'red').save(source)
+    opts = TemplateOptions(rows=2, columns=3, page_orientation='landscape',
+        image_size_mode='manual', image_width_cm=4, image_height_cm=3, keep_aspect_ratio=keep)
+    result = template.run(JobRequest('template', (source,), tmp_path / 'out', opts), lambda _: None, Event())
+    picture = Document(result[0].output).inline_shapes[0]
+    assert abs(picture.width.cm - expected[0]) < .001
+    assert abs(picture.height.cm - expected[1]) < .001
+
+
+@pytest.mark.parametrize('values', [dict(rows=11), dict(columns=-1), dict(rows=1.5),
+    dict(page_orientation='invalid'), dict(image_size_mode='unknown'),
+    dict(rows=10, page_orientation='landscape'),
+    dict(image_size_mode='manual', image_width_cm=100),
+    dict(image_size_mode='manual', image_height_cm=float('nan')),
+    dict(image_size_mode='manual', image_width_cm=0)])
+def test_photo_grid_invalid_layout_rejected_before_output(tmp_path, values):
+    source = tmp_path / 'photo.png'
+    Image.new('RGB', (40, 50)).save(source)
+    output = tmp_path / 'out'
+    with pytest.raises(ValueError):
+        template.run(JobRequest('template', (source,), output, TemplateOptions(**values)), lambda _: None, Event())
+    assert not output.exists()

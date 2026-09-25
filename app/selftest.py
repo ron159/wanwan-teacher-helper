@@ -81,6 +81,8 @@ def run_selftest(root: Path):
         ('photo', (transparent, rotated), PhotoOptions(keep_metadata=True)),
         *[('office', (path,), OfficeOptions(optimize, 75))
           for path in (document, presentation) for optimize in (False, True)],
+        *[('office', (path,), OfficeOptions(True, 45, True))
+          for path in (document, presentation)],
         *[('organize', (photo, document), OrganizeOptions(mode))
           for mode in ('classify', 'rename', 'archive')],
         ('organize', (photo, photo), OrganizeOptions('duplicates')),
