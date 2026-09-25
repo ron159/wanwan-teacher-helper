@@ -11,8 +11,10 @@ from app.registry import TOOLS
 from app.ui.forms import OptionsForm
 from app.ui.photo_preview import PhotoPreviewDialog
 from app.ui.worker import JobWorker
+from app.ui.update import UpdateWorker
 from app.ui.theme import STYLE
 from app.resources import resource
+from app.updater import current_version, launch_replacement
 
 
 def label(text, name=None):
@@ -51,6 +53,7 @@ class MainWindow(QMainWindow):
         self.last_report = None
         self.preview_text = None
         self.results = ()
+        self.update_worker = None
         central = QWidget()
         outer = QHBoxLayout(central)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -69,7 +72,7 @@ class MainWindow(QMainWindow):
         for index, (title, _, _) in enumerate(TOOLS.values(), 1):
             self.nav.addItem(f'{index:02d}   {title}')
         side.addWidget(self.nav, 1)
-        side.addWidget(label('本地处理 · 保留原件\n无需登录，也不上传文件', 'privacy'))
+        side.addWidget(label('文件本地处理 · 保留原件\n更新检查连接 GitHub，不上传材料', 'privacy'))
         side.addWidget(button('使用帮助与许可', self.help))
         outer.addWidget(sidebar)
         workspace = QWidget()
@@ -174,6 +177,70 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence('Ctrl+O'), self, self.add_files)
         QShortcut(QKeySequence('Delete'), self.table, self.remove_selected)
 
+    def check_for_updates(self):
+        version = current_version()
+        if not version or self.update_worker is not None:
+            return
+        self.update_worker = UpdateWorker(version=version, parent=self)
+        self.update_worker.found.connect(self.offer_update)
+        self.update_worker.failed.connect(self.update_error)
+        self.update_worker.finished.connect(self.finish_update_worker)
+        self.update_worker.start()
+
+    def finish_update_worker(self):
+        worker = self.sender()
+        if self.update_worker is worker:
+            self.update_worker = None
+        worker.deleteLater()
+
+    def offer_update(self, update):
+        if not update:
+            return
+        answer = QMessageBox.question(self, '发现新版本',
+            f'丸丸小帮手 {update["version"]} 已发布。现在下载并安装更新吗？',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if self.is_busy():
+            QMessageBox.information(self, '更新稍后进行', '请等待当前任务完成，然后重新启动软件更新。')
+            return
+        self.update_worker = UpdateWorker(update=update, parent=self)
+        self.update_worker.progress.connect(self.update_progress)
+        self.update_worker.downloaded.connect(self.install_update)
+        self.update_worker.failed.connect(self.update_error)
+        self.update_worker.finished.connect(self.finish_update_worker)
+        self.status.setText('正在下载更新…')
+        self.progress.setRange(0, 0)
+        self.update_worker.start()
+
+    def update_progress(self, done, total):
+        if total:
+            self.progress.setRange(0, 100)
+            self.progress.setValue(min(100, done * 100 // total))
+        self.status.setText(f'正在下载更新：{done / 1024 / 1024:.1f} MB')
+
+    def update_error(self, message):
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.status.setText('自动更新失败')
+        QMessageBox.warning(self, '自动更新失败', f'{message}\n请稍后重试或从 GitHub Releases 手动下载。')
+
+    def install_update(self, path, digest):
+        if self.is_busy():
+            path.unlink(missing_ok=True)
+            path.parent.rmdir()
+            self.update_error('当前任务仍在运行，请完成后重新启动软件更新。')
+            return
+        try:
+            launch_replacement(path, digest)
+        except Exception as exc:
+            self.update_error(str(exc))
+            return
+        self.update_worker.wait(5000)
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().quit()
+
     def tool_id(self):
         return list(TOOLS)[self.nav.currentRow()]
 
@@ -262,6 +329,9 @@ class MainWindow(QMainWindow):
 
     def start_preview(self):
         if self.is_busy():
+            return
+        if self.update_worker and self.update_worker.update is not None:
+            self.status.setText('正在下载更新，请稍候')
             return
         if not self.output.text().strip():
             self.status.setText('请选择输出目录')
@@ -394,7 +464,8 @@ class MainWindow(QMainWindow):
             '表格：首行为字段名；同顺序同字段才汇总。缓存公式值可能过时。\n'
             '模板：固定版式；请复核字体、换行与打印效果。\n'
             '视频：MP4 / MPEG-4 + AAC；实际体积取决于原素材。\n\n'
-            '完全离线，无遥测。报告仅在指定目录生成，归档清单包含文件名。\n'
+            '文件处理完全离线，无遥测；启动时仅向 GitHub 查询新版本，不上传材料。\n'
+            '报告仅在指定目录生成，归档清单包含文件名。\n'
             '依赖 PySide6/Qt (LGPL)、FFmpeg (LGPL) 及其他开源组件。\n'
             '完整许可证、SBOM 与重建说明随 GitHub Release 提供。')
 
@@ -411,4 +482,10 @@ class MainWindow(QMainWindow):
             self.status.setText('正在取消任务，请待任务停止后再关闭窗口')
             event.ignore()
         else:
+            if self.update_worker and self.update_worker.isRunning():
+                self.update_worker.requestInterruption()
+                self.update_worker.finished.connect(self.close)
+                self.status.setText('正在结束更新检查…')
+                event.ignore()
+                return
             event.accept()

@@ -23,6 +23,7 @@ def main():
     if '--tool' in sys.argv:
         from app.cli import run_cli
         return run_cli(sys.argv[1:])
+    from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
     from app.ui.window import MainWindow
     app = QApplication(sys.argv)
@@ -30,6 +31,7 @@ def main():
     app.setOrganizationName('WanwanTeacherHelper')
     window = MainWindow()
     window.show()
+    QTimer.singleShot(0, window.check_for_updates)
     return app.exec()
 
 
