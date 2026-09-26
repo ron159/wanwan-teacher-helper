@@ -11,6 +11,7 @@ from app.core.contracts import JobRequest
 from app.registry import TOOLS
 from app.ui.forms import OptionsForm
 from app.ui.photo_preview import PhotoPreviewDialog
+from app.ui.contacts import ContactsPage
 from app.ui.worker import JobWorker
 from app.ui.update import UpdateWorker
 from app.ui.theme import theme_style
@@ -68,18 +69,21 @@ class MainWindow(QMainWindow):
         side = QVBoxLayout(sidebar)
         side.setContentsMargins(16, 22, 16, 20)
         side.addWidget(label('丸丸小帮手', 'brand'))
-        side.addWidget(label('把时间留给孩子', 'tagline'))
         self.nav = QListWidget()
         self.nav.setObjectName('nav')
         self.nav.setAccessibleName('工具导航')
         for index, (title, _, _) in enumerate(TOOLS.values(), 1):
             self.nav.addItem(f'{index:02d}   {title}')
+        self.nav.addItem(f'{len(TOOLS) + 1:02d}   通信簿')
         side.addWidget(self.nav, 1)
-        side.addWidget(label('文件本地处理 · 保留原件\n更新检查连接 GitHub，不上传材料', 'privacy'))
+        privacy = label('文件本机处理，保留原件\n通信簿本机保存\n启动时检查 GitHub 更新', 'privacy')
+        privacy.setWordWrap(True)
+        side.addWidget(privacy)
         side.addWidget(button('使用帮助与许可', self.help))
         outer.addWidget(sidebar)
         workspace = QWidget()
         workspace.setObjectName('workspace')
+        self.workspace = workspace
         layout = QVBoxLayout(workspace)
         layout.setContentsMargins(28, 26, 28, 22)
         layout.setSpacing(14)
@@ -159,7 +163,7 @@ class MainWindow(QMainWindow):
         self.progress.setTextVisible(False)
         self.progress.setValue(0)
         layout.addWidget(self.progress)
-        self.status = label('准备就绪 · 执行前会展示处理计划', 'hint')
+        self.status = label('处理前会展示计划，确认后才执行。', 'hint')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         actions = QHBoxLayout()
@@ -175,9 +179,12 @@ class MainWindow(QMainWindow):
         actions.addWidget(self.start_button)
         layout.addLayout(actions)
         outer.addWidget(workspace, 1)
+        self.contacts_page = ContactsPage(parent=self)
+        outer.addWidget(self.contacts_page, 1)
+        self.contacts_page.hide()
         self.nav.currentRowChanged.connect(self.change_tool)
         self.nav.setCurrentRow(0)
-        QShortcut(QKeySequence('Ctrl+O'), self, self.add_files)
+        QShortcut(QKeySequence('Ctrl+O'), self, self.open_current_files)
         QShortcut(QKeySequence('Delete'), self.table, self.remove_selected)
 
     def check_for_updates(self):
@@ -248,9 +255,18 @@ class MainWindow(QMainWindow):
         QApplication.instance().quit()
 
     def tool_id(self):
-        return list(TOOLS)[self.nav.currentRow()]
+        row = self.nav.currentRow()
+        return list(TOOLS)[row] if 0 <= row < len(TOOLS) else None
 
     def change_tool(self, index):
+        if index < 0:
+            return
+        contacts = index == len(TOOLS)
+        self.workspace.setVisible(not contacts)
+        self.contacts_page.setVisible(contacts)
+        if contacts:
+            self.contacts_page.search.setFocus()
+            return
         key = list(TOOLS)[index]
         self.title.setText(TOOLS[key][0])
         self.subtitle.setText(TOOLS[key][1])
@@ -278,6 +294,12 @@ class MainWindow(QMainWindow):
         if not self.is_busy():
             files, _ = QFileDialog.getOpenFileNames(self, '选择要处理的文件')
             self.add_paths(files)
+
+    def open_current_files(self):
+        if self.tool_id() is None:
+            self.contacts_page.choose_excel()
+        else:
+            self.add_files()
 
     def add_folder(self):
         if self.is_busy():
@@ -340,6 +362,8 @@ class MainWindow(QMainWindow):
             self.output.setText(folder)
 
     def start_preview(self):
+        if self.tool_id() is None:
+            return
         if self.is_busy():
             return
         if self.update_worker and self.update_worker.update is not None:
@@ -476,6 +500,7 @@ class MainWindow(QMainWindow):
             '表格：首行为字段名；同顺序同字段才汇总。缓存公式值可能过时。\n'
             '模板：固定版式；请复核字体、换行与打印效果。\n'
             '视频：MP4 / MPEG-4 + AAC；实际体积取决于原素材。\n\n'
+            '通信簿：支持 Excel 与粘贴识别、核对预览、搜索和手动编辑；数据保存在当前电脑的用户目录。\n\n'
             '文件处理完全离线，无遥测；启动时仅向 GitHub 查询新版本，不上传材料。\n'
             '报告仅在指定目录生成，归档清单包含文件名。\n'
             '依赖 PySide6/Qt (LGPL)、FFmpeg (LGPL) 及其他开源组件。\n'
@@ -486,6 +511,11 @@ class MainWindow(QMainWindow):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
+        if self.tool_id() is None:
+            paths = [Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()]
+            if len(paths) == 1 and paths[0].suffix.lower() in {'.xlsx', '.xls'}:
+                self.contacts_page.import_excel_path(paths[0])
+            return
         self.add_paths(url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile())
 
     def closeEvent(self, event):

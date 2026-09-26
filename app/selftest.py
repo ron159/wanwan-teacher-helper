@@ -19,6 +19,7 @@ from app.core.contracts import (JobRequest, PhotoOptions, OfficeOptions, Organiz
     TemplateOptions, PdfOptions, SheetOptions, MediaOptions)
 from app.registry import TOOLS
 from app.tools.media import engines
+from app.contacts import ContactStore, parse_excel, parse_text
 
 
 def run_selftest(root: Path):
@@ -50,6 +51,24 @@ def run_selftest(root: Path):
     workbook.active.append(['编号', '姓名'])
     workbook.active.append(['001', '测试材料'])
     workbook.save(sheet)
+    contact_sheet = source_dir / '通信簿.xlsx'
+    contacts_book = Workbook()
+    contacts_book.active.append(['学生姓名', '父亲姓名', '父亲电话', '家庭住址'])
+    contacts_book.active.append(['张三', '张明', 13800138000, '幸福路1号'])
+    contacts_book.save(contact_sheet)
+    recognized = parse_excel(contact_sheet).contacts
+    if len(recognized) != 1 or recognized[0]['fatherPhone'] != '13800138000':
+        raise RuntimeError('Contact workbook smoke failed')
+    pasted = parse_text('学生姓名：李四 母亲：李梅 电话：13900139000').contacts
+    if len(pasted) != 1 or pasted[0]['motherPhone'] != '13900139000':
+        raise RuntimeError('Contact paste smoke failed')
+    contact_store = ContactStore(root / 'contact-smoke.json')
+    contact_store.save([{'id': 'smoke', **recognized[0]}])
+    if contact_store.load()[0]['name'] != '张三':
+        raise RuntimeError('Contact storage smoke failed')
+    import xlrd
+    if not xlrd.__version__:
+        raise RuntimeError('XLS reader is not bundled')
     cached_sheet = source_dir / '缓存公式.xlsx'
     formula_book = Workbook()
     formula_book.active.append(['数量', '说明'])
@@ -116,7 +135,7 @@ def run_selftest(root: Path):
     application = QApplication.instance() or QApplication([])
     window = MainWindow()
     window.show()
-    for index in range(7):
+    for index in range(len(TOOLS) + 1):
         window.nav.setCurrentRow(index)
         application.processEvents()
     window.nav.setCurrentRow(0)
@@ -124,6 +143,7 @@ def run_selftest(root: Path):
     window.grab().save(str(root / 'ui.png'))
     window.close()
     (root / 'self-test.json').write_text(json.dumps({'status': 'passed', 'cases': len(cases),
+        'contacts_checked': True,
         'elapsed_seconds': round(time.monotonic() - started, 2),
         'is_admin': ctypes.windll.shell32.IsUserAnAdmin() != 0 if os.name == 'nt' else os.geteuid() == 0, 'originals_unchanged': True,
         'case_matrix': case_records, 'results': records}, default=str, ensure_ascii=False, indent=2), encoding='utf-8')

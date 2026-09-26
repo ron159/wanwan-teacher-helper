@@ -7,9 +7,9 @@ from app.core.safe_output import check_cancel
 
 TOOLS = {
     'photo': ('照片准备', '校正方向、缩放照片，保留原件', photo.run),
-    'office': ('文档瘦身', '先看占用，再选择保守或激进优化 PPTX / DOCX', office.run),
-    'organize': ('文件整理', '分类、命名、找重复与学期归档', organize.run),
-    'template': ('材料制作', '把真实内容排成 Word / PPT 材料', template.run),
+    'office': ('文档瘦身', '诊断占用；保守或激进压缩 DOCX / PPTX', office.run),
+    'organize': ('文件整理', '分类、批量命名、重复检测与 ZIP 归档', organize.run),
+    'template': ('材料制作', '生成 Word / PPT 材料', template.run),
     'pdf': ('PDF 工具', '合并、拆分、抽页、旋转和照片打印', pdf.run),
     'sheet': ('表格汇总', '核对字段后合并同结构 Excel', sheet.run),
     'media': ('影音处理', '压缩视频、提取音频与按时间裁剪', media.run),

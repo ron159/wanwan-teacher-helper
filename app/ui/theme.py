@@ -13,10 +13,9 @@ def theme_style(dark):
         disabled, progress_bg = '#87968b', '#e0e8dd'
     return f'''
 QWidget {{ color: {text}; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; }}
-QMainWindow, QDialog, QMessageBox, #workspace {{ background: {background}; }}
+QMainWindow, QDialog, QMessageBox, #workspace, #contactsPage {{ background: {background}; }}
 #sidebar {{ background: {sidebar}; border: 0; }}
 #brand {{ color: #ffffff; font-size: 23px; font-weight: 700; padding: 12px 8px; }}
-#tagline {{ color: #bcd5c8; padding: 0 8px 16px; }}
 #nav {{ background: transparent; border: 0; outline: 0; color: #dce9e0; font-size: 15px; }}
 #nav::item {{ padding: 15px 16px; margin: 3px 0; border-radius: 6px; }}
 #nav::item:selected {{ background: #dcebc9; color: #183f37; font-weight: 600; }}
@@ -43,7 +42,7 @@ QTableWidget {{ color: {text}; border: 0; background: {panel}; alternate-backgro
 QHeaderView::section {{ color: {text}; background: {header}; padding: 9px; border: 0; border-bottom: 1px solid {border}; font-weight: 600; }}
 QProgressBar {{ border: 0; background: {progress_bg}; border-radius: 4px; min-height: 8px; max-height: 8px; }}
 QProgressBar::chunk {{ background: #4f8968; border-radius: 4px; }}
-QScrollArea, QScrollArea QWidget#qt_scrollarea_viewport, QWidget#optionsForm {{ border: 0; background: {panel}; }}
+QScrollArea, QScrollArea QWidget#qt_scrollarea_viewport, QWidget#optionsForm, QWidget#contactsEditorBody {{ border: 0; background: {panel}; }}
 QScrollBar:vertical {{ background: {panel}; width: 12px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {border}; border-radius: 5px; min-height: 24px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
