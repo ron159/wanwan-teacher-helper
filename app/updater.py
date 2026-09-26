@@ -157,8 +157,10 @@ def launch_replacement(downloaded, expected_hash):
         pass
     script = downloaded.parent / 'replace.ps1'
     script.write_text(HELPER_SCRIPT, encoding='utf-8-sig')
+    # PowerShell passes this on to the restarted onefile EXE after the old bundle is removed.
     subprocess.Popen(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
                       '-WindowStyle', 'Hidden', '-File', str(script), '-Source', str(downloaded),
                       '-Target', str(target), '-ParentPid', str(os.getpid()),
-                      '-ExpectedHash', expected_hash], close_fds=True,
+                      '-ExpectedHash', expected_hash],
+                     env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}, close_fds=True,
                      creationflags=subprocess.CREATE_NO_WINDOW)

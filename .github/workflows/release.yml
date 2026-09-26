@@ -45,7 +45,7 @@ jobs:
         run: python scripts/build.py onefile
       - name: Sign and verify production release
         # These exact self-use tags are authorized without a signing certificate.
-        if: startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/tags/v0.2.0-preview.1' && github.ref != 'refs/tags/v0.2.0-preview.2' && github.ref != 'refs/tags/v0.3.0' && github.ref != 'refs/tags/v0.3.1'
+        if: startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/tags/v0.2.0-preview.1' && github.ref != 'refs/tags/v0.2.0-preview.2' && github.ref != 'refs/tags/v0.3.0' && github.ref != 'refs/tags/v0.3.1' && github.ref != 'refs/tags/v0.3.2'
         shell: pwsh
         env:
           WANWAN_SIGNING_PFX_BASE64: ${{ secrets.WANWAN_SIGNING_PFX_BASE64 }}
@@ -54,10 +54,10 @@ jobs:
           WANWAN_TIMESTAMP_URL: ${{ vars.WANWAN_TIMESTAMP_URL }}
         run: ./scripts/sign_release.ps1
       - name: Record authorized unsigned release
-        if: github.ref == 'refs/tags/v0.2.0-preview.1' || github.ref == 'refs/tags/v0.2.0-preview.2' || github.ref == 'refs/tags/v0.3.0' || github.ref == 'refs/tags/v0.3.1'
+        if: github.ref == 'refs/tags/v0.2.0-preview.1' || github.ref == 'refs/tags/v0.2.0-preview.2' || github.ref == 'refs/tags/v0.3.0' || github.ref == 'refs/tags/v0.3.1' || github.ref == 'refs/tags/v0.3.2'
         shell: pwsh
         run: |
-          $status = if ($env:GITHUB_REF_NAME -in @('v0.3.0', 'v0.3.1')) { 'UnsignedSelfUse' } else { 'UnsignedPreview' }
+          $status = if ($env:GITHUB_REF_NAME -in @('v0.3.0', 'v0.3.1', 'v0.3.2')) { 'UnsignedSelfUse' } else { 'UnsignedPreview' }
           @{ status = $status; version = $env:GITHUB_REF_NAME; reason = 'User-authorized self-use release without a signing certificate; Office/WPS visual and print acceptance remains incomplete' } | ConvertTo-Json | Set-Content artifacts/signature.json -Encoding utf8
       - name: Smoke test single executable without Python on PATH
         shell: pwsh

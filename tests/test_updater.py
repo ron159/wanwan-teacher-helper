@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,6 +77,27 @@ def test_rejects_release_asset_from_other_address(monkeypatch):
     monkeypatch.setattr(updater, '_read_url', lambda _: json.dumps([item]).encode())
     with pytest.raises(ValueError, match='地址'):
         updater.find_update('v0.1.0')
+
+
+def test_replacement_starts_with_fresh_pyinstaller_environment(monkeypatch, tmp_path):
+    target = tmp_path / 'installed.exe'
+    target.write_bytes(b'old release')
+    downloaded = tmp_path / 'staged' / 'new.exe'
+    downloaded.parent.mkdir()
+    downloaded.write_bytes(b'new release')
+    monkeypatch.setattr(updater, 'os', SimpleNamespace(
+        name='nt', environ={'_PYI_APPLICATION_HOME_DIR': 'stale extraction'}, getpid=lambda: 1234))
+    monkeypatch.setattr(updater.sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(updater.sys, 'executable', str(target))
+    monkeypatch.setattr(updater.subprocess, 'CREATE_NO_WINDOW', 0, raising=False)
+    calls = []
+    monkeypatch.setattr(updater.subprocess, 'Popen', lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    updater.launch_replacement(downloaded, 'a' * 64)
+
+    assert len(calls) == 1
+    assert calls[0][1]['env']['PYINSTALLER_RESET_ENVIRONMENT'] == '1'
+    assert calls[0][1]['env']['_PYI_APPLICATION_HOME_DIR'] == 'stale extraction'
 
 
 @pytest.mark.skipif(os.name != 'nt', reason='Requires Windows PowerShell')
