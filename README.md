@@ -43,6 +43,10 @@ uv run --locked python main.py --self-test artifacts/smoke
 `uv export --locked --all-groups --no-hashes --no-emit-project --output-file requirements-lock.txt`
 同步兼容清单。
 
+Windows 引擎仍为 FFmpeg 8.1.3。上游滚动发布已删除，构建改用本仓库 v0.3.2
+附带的保存归档；其中 223 个文件与原始解包清单逐项 SHA-256 一致。
+`packaging/ffmpeg-lock.json` 同时保留原始上游 URL、原归档哈希和保存归档哈希。
+
 macOS/Linux 开发环境的影音测试可使用 PATH 中的 ffmpeg/ffprobe；发行 Windows EXE 只使用哈希验证的随包引擎。仅自动更新访问 GitHub；文件处理不联网，也无遥测或材料上传。
 
 CLI 默认只预览：`uv run --locked python main.py --tool photo --input 照片.jpg --output 输出目录`；核对后追加 `--execute`。各工具使用同一执行接口，`--options` 可传入参数 JSON。
