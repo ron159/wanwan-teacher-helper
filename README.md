@@ -26,25 +26,33 @@
 ## 开发与测试
 
 ```sh
-python -m venv .venv
-# 激活环境后
-python -m pip install -r requirements-lock.txt
-python main.py
-python -m pytest -q
-ruff check .
-python main.py --self-test artifacts/smoke
+uv sync --locked
+uv run --locked python main.py
+uv run --locked python -m pytest -q
+uv run --locked ruff check .
+uv run --locked python main.py --self-test artifacts/smoke
 ```
+
+依赖统一由 `pyproject.toml` 和 `uv.lock` 管理，无需激活虚拟环境。
+`.python-version` 固定 Python 3.14；默认同步运行、测试和打包依赖，与迁移前的开发环境一致。
+全部依赖版本沿用原 `requirements-lock.txt`，未升级依赖；Windows 与 macOS 的平台条件也保留。
+仅运行源码可用 `uv sync --locked --no-default-groups`；随后使用
+`uv run --locked --no-default-groups python main.py` 启动。
+`requirements-lock.txt` 保留为迁移前的兼容清单；开发与 CI 使用 uv 锁文件。
+后续修改依赖时应更新 `uv.lock`，并用
+`uv export --locked --all-groups --no-hashes --no-emit-project --output-file requirements-lock.txt`
+同步兼容清单。
 
 macOS/Linux 开发环境的影音测试可使用 PATH 中的 ffmpeg/ffprobe；发行 Windows EXE 只使用哈希验证的随包引擎。仅自动更新访问 GitHub；文件处理不联网，也无遥测或材料上传。
 
-CLI 默认只预览：`python main.py --tool photo --input 照片.jpg --output 输出目录`；核对后追加 `--execute`。各工具使用同一执行接口，`--options` 可传入参数 JSON。
+CLI 默认只预览：`uv run --locked python main.py --tool photo --input 照片.jpg --output 输出目录`；核对后追加 `--execute`。各工具使用同一执行接口，`--options` 可传入参数 JSON。
 
 Windows 构建：
 
 ```powershell
-python scripts/fetch_ffmpeg.py
-python scripts/build.py onedir
-python scripts/build.py onefile
+uv run --locked python scripts/fetch_ffmpeg.py
+uv run --locked python scripts/build.py onedir
+uv run --locked python scripts/build.py onefile
 ```
 
 CI 在 Windows 执行测试，然后分别启动目录版和单 EXE，使用合成材料实际运行所有模块并生成截图、结果与源文件哈希检查。除明确授权的 `v0.2.0-preview.1`、`v0.2.0-preview.2`、`v0.3.0`、`v0.3.1` 和 `v0.3.2` 自用未签名版外，标签发布必须先通过生产签名和时间戳校验，再执行单 EXE 验收；配置见 [签名说明](packaging/signing.md)。Release 附 SHA-256、SBOM、第三方许可与验证记录。
