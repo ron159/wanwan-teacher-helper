@@ -1,6 +1,19 @@
 from PIL import Image
 from app.ui.window import MainWindow
 from PySide6.QtCore import Qt
+from types import SimpleNamespace
+
+
+def test_macos_does_not_download_windows_updates(qtbot, monkeypatch):
+    from app.ui import window as window_module
+    monkeypatch.setattr(window_module, 'sys', SimpleNamespace(platform='darwin'))
+    def unexpected_check():
+        raise AssertionError('macOS must not query the Windows EXE updater')
+    monkeypatch.setattr(window_module, 'current_version', unexpected_check)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.check_for_updates()
+    assert window.update_worker is None
 
 
 def test_default_output_uses_system_documents_location(qtbot, tmp_path, monkeypatch):

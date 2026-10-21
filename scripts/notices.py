@@ -9,7 +9,8 @@ import os
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def generate():
+def generate(engine=None):
+    engine = engine or ROOT / 'vendor/ffmpeg'
     target = ROOT / 'licenses/generated'
     target.mkdir(parents=True, exist_ok=True)
     components = []
@@ -31,14 +32,18 @@ def generate():
                            'purl': f'pkg:pypi/{name.lower()}@{dist.version}',
                            'properties': [{'name': 'license-metadata', 'value': license_id},
                                           {'name': 'license-files', 'value': json.dumps(texts)}]})
-    manifest = ROOT / 'vendor/ffmpeg/manifest.json'
+    manifest = engine / 'manifest.json'
     if manifest.exists():
         shutil.copyfile(manifest, ROOT / 'licenses/ffmpeg-manifest.json')
-        if os.name == 'nt':
-            engine = ROOT / 'vendor/ffmpeg/bin/ffmpeg.exe'
+        executable = engine / 'bin' / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
+        if executable.exists():
             for flag, filename in [('-version', 'ffmpeg-build.txt'), ('-L', 'ffmpeg-license.txt')]:
-                result = subprocess.run([str(engine), flag], capture_output=True, check=True)
+                result = subprocess.run([str(executable), flag], capture_output=True, check=True)
                 (ROOT / 'licenses' / filename).write_bytes(result.stdout + result.stderr)
+        for name in ('LICENSE.md', 'COPYING.LGPLv2.1'):
+            if (engine / name).exists():
+                (target / 'FFmpeg').mkdir(exist_ok=True)
+                shutil.copy2(engine / name, target / 'FFmpeg' / name)
         lock = json.loads(manifest.read_text())
         components.append({'type': 'application', 'name': 'FFmpeg', 'version': lock['version'],
                            'hashes': [{'alg': 'SHA-256', 'content': lock['sha256']}],

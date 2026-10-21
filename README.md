@@ -1,6 +1,6 @@
 # 丸丸小帮手电脑版
 
-面向幼儿园教师的离线文件助手。Python + PySide6，Windows 单 EXE，无需安装 Python 或 Office。保留原件、输出不覆盖、先预览再执行，支持进度、取消与逐文件报告。
+面向幼儿园教师的离线文件助手。Python + PySide6，提供 Windows 单 EXE 与 Apple Silicon macOS 应用，无需安装 Python 或 Office。保留原件、输出不覆盖、先预览再执行，支持进度、取消与逐文件报告。
 
 ## 功能
 
@@ -16,6 +16,8 @@
 ## 使用
 
 从 Releases 下载 `WanwanTeacherHelper-*-windows-x64.exe`，双击启动。选工具 → 添加文件 → 设置输出目录 → 预览计划 → 确认。请使用“查看报告”核对结果。输出目录包含结果和 JSON 报告；报告、归档清单仍须按园所要求妥善保管。
+
+macOS 15 及以上的 Apple Silicon Mac 下载 `WanwanTeacherHelper-*-macos-arm64.zip`，解压后将 `.app` 拖到“应用程序”即可。Mac 版内含原生 FFmpeg/ffprobe，无需 Homebrew；采用 ad-hoc 签名，尚无 Apple Developer ID 签名和公证。Mac 版从 Releases 手动下载更新，不会使用 Windows EXE 自动替换流程。
 
 单文件程序会在用户临时目录释放依赖，退出后由 PyInstaller 清理。首次启动请为包含影音引擎的大体积程序预留时间和磁盘空间。输入文件处理期间请勿移动或修改。
 
@@ -47,7 +49,7 @@ Windows 引擎仍为 FFmpeg 8.1.3。上游滚动发布已删除，构建改用�
 附带的保存归档；其中 223 个文件与原始解包清单逐项 SHA-256 一致。
 `packaging/ffmpeg-lock.json` 同时保留原始上游 URL、原归档哈希和保存归档哈希。
 
-macOS/Linux 开发环境的影音测试可使用 PATH 中的 ffmpeg/ffprobe；发行 Windows EXE 只使用哈希验证的随包引擎。仅自动更新访问 GitHub；文件处理不联网，也无遥测或材料上传。
+macOS/Linux 开发环境的影音测试可使用 PATH 中的 ffmpeg/ffprobe；发行 Windows EXE 只使用哈希验证的随包引擎，macOS 应用只使用应用内原生引擎。仅 Windows 自动更新访问 GitHub；文件处理不联网，也无遥测或材料上传。
 
 CLI 默认只预览：`uv run --locked python main.py --tool photo --input 照片.jpg --output 输出目录`；核对后追加 `--execute`。各工具使用同一执行接口，`--options` 可传入参数 JSON。
 
@@ -59,13 +61,22 @@ uv run --locked python scripts/build.py onedir
 uv run --locked python scripts/build.py onefile
 ```
 
-CI 在 Windows 执行测试，然后分别启动目录版和单 EXE，使用合成材料实际运行所有模块并生成截图、结果与源文件哈希检查。除明确授权的 `v0.2.0-preview.1`、`v0.2.0-preview.2`、`v0.3.0`、`v0.3.1`、`v0.3.2` 和 `v0.3.3` 自用未签名版外，标签发布必须先通过生产签名和时间戳校验，再执行单 EXE 验收；配置见 [签名说明](packaging/signing.md)。Release 附 SHA-256、SBOM、第三方许可与验证记录。
+macOS 构建（需要 Xcode Command Line Tools；使用独立 Python 保持系统兼容性）：
+
+```sh
+uv sync --locked --no-build --managed-python --python 3.14.6
+uv run --locked python scripts/build.py macos
+```
+
+产物为 `dist/WanwanTeacherHelper.app` 和对应版本 ZIP。FFmpeg 官方源码哈希与构建参数固定于 `packaging/ffmpeg-macos-lock.json`；源码包、构建记录和许可证随 macOS Release 提供。重建后可替换应用中的 FFmpeg，修改后需重新执行 ad-hoc 签名。
+
+CI 同时构建 Windows 与 macOS，使用合成材料实际运行所有模块并生成截图、结果与源文件哈希检查。macOS 验证不含 Python/Homebrew 的 PATH 启动与应用签名。除明确授权的 `v0.2.0-preview.1`、`v0.2.0-preview.2`、`v0.3.0`、`v0.3.1`、`v0.3.2`、`v0.3.3` 和 `v0.3.4` Windows 自用未签名版外，Windows 标签发布必须先通过生产签名和时间戳校验，再执行单 EXE 验收；配置见 [签名说明](packaging/signing.md)。Release 附 SHA-256、SBOM、第三方许可与验证记录。
 
 ## 已知边界
 
 仅支持白名单格式；不支持旧 DOC/PPT、宏、加密/签名 Office、任意 Office 转 PDF、OCR、人脸识别或自动教育评价。文档结构校验不能替代 Office/WPS 打开、字体换行、动画与打印的人工复核。首次发布为试用版本，尚不代表园所生产验收。
 
-未配置生产代码签名身份，v0.1.0、v0.2.0-preview.1、v0.2.0-preview.2、v0.3.0、v0.3.1、v0.3.2 与 v0.3.3 自用 EXE 未做 Authenticode 签名；请从本仓库下载并核对 SHA-256。除上述明确授权的标签外，新标签发布会因缺少签名身份而阻断。CI 使用新建的非管理员账户、移除 Python 的 PATH，并阻断测试账户所有进程出站执行全部 30 个模式组合，同时检查通信簿识别与保存；还会测量启动、解包与缓存空间并核对退出清理。影音引擎只允许本地协议。物理断网实机与真实 Office/WPS 样本验收仍需在对应环境执行。
+未配置生产代码签名身份，v0.1.0、v0.2.0-preview.1、v0.2.0-preview.2、v0.3.0、v0.3.1、v0.3.2、v0.3.3 与 v0.3.4 自用 EXE 未做 Authenticode 签名；请从本仓库下载并核对 SHA-256。除上述明确授权的标签外，Windows 新标签发布会因缺少签名身份而阻断。Windows CI 使用新建的非管理员账户、移除 Python 的 PATH，并阻断测试账户所有进程出站执行全部 30 个模式组合，同时检查通信簿识别与保存；还会测量启动、解包与缓存空间并核对退出清理。影音引擎只允许本地协议。物理断网实机与真实 Office/WPS 样本验收仍需在对应环境执行。
 
 第三方许可证、库替换与重建说明见 [licenses/NOTICE.md](licenses/NOTICE.md)。本地白皮书目录 `local_doc/` 和 `locald_doc/` 均不上传。
 

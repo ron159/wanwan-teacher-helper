@@ -1,6 +1,8 @@
 # Windows 生产签名
 
-标签发布必须通过 `scripts/sign_release.ps1`；缺少身份、证书过期、签名不可信或无时间戳会中止发布。仅用户明确授权的 `v0.2.0-preview.1`、`v0.2.0-preview.2` 和自用版 `v0.3.0`、`v0.3.1`、`v0.3.2`、`v0.3.3` 允许未签名发行；`signature.json` 分别记录 `UnsignedPreview` 或 `UnsignedSelfUse`。其他版本标签仍强制检查生产签名。PR 构建保持未签名，仅供验证。
+Windows 标签发布必须通过 `scripts/sign_release.ps1`；缺少身份、证书过期、签名不可信或无时间戳会中止发布。仅用户明确授权的 `v0.2.0-preview.1`、`v0.2.0-preview.2` 和自用版 `v0.3.0`、`v0.3.1`、`v0.3.2`、`v0.3.3`、`v0.3.4` 允许未签名发行；`signature.json` 分别记录 `UnsignedPreview` 或 `UnsignedSelfUse`。其他版本标签仍强制检查生产签名。PR 构建保持未签名，仅供验证。
+
+macOS 构建使用 PyInstaller 的 ad-hoc 签名，并在写入应用版本信息后重新签名、执行 `codesign --verify --deep --strict`。这仅验证包结构完整性，不代表 Apple Developer ID 身份或公证；`macos-signature.json` 如实记录 `AdHocNotNotarized`。
 
 当前尚未配置实际生产身份。支持 Windows 当前账户证书库中的代码签名证书；证书私钥可以由已安装的硬件提供程序管理。CI 若使用允许导出的 PFX，配置 secrets `WANWAN_SIGNING_PFX_BASE64` / `WANWAN_SIGNING_PFX_PASSWORD`，以及 vars `WANWAN_SIGNING_THUMBPRINT` / `WANWAN_TIMESTAMP_URL`。证书材料不得写入仓库或聊天；秘密应由持有人在 GitHub 设置中配置。云签名服务需按已有服务接入，不能用自签名替代。
 

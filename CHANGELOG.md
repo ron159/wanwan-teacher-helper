@@ -1,5 +1,12 @@
 # 更新记录
 
+## 0.3.4 — 2026-10-21
+
+- 新增 Apple Silicon macOS 应用与 ZIP 分发包，面向 macOS 15 及以上系统，无需安装 Python 或 Homebrew。
+- macOS 随包提供从固定 FFmpeg 8.1.3 官方源码构建的原生影音引擎，保留现有 Python 依赖版本。
+- Mac 版使用手动下载更新，避免误下载 Windows EXE；补充双平台构建和冻结应用自检。
+- macOS 采用 ad-hoc 签名，未进行 Apple Developer ID 签名及公证；Windows 延续自用未签名方式。
+
 ## 0.3.2 — 2026-09-26
 
 - 修复自动更新替换 EXE 后，首次重启误用旧版临时解包目录，导致 `python314.dll` 加载失败。

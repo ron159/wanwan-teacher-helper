@@ -15,6 +15,11 @@ from threading import Event
 
 def engines(cancel=None):
     cancel = cancel if cancel is not None else Event()
+    if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+        found = tuple(resource(f'vendor/ffmpeg/bin/{name}') for name in ('ffmpeg', 'ffprobe'))
+        if not all(path.is_file() and os.access(path, os.X_OK) for path in found):
+            raise ValueError('应用内的影音引擎缺失或不可执行，请重新下载完整的 macOS 应用')
+        return tuple(str(path) for path in found)
     if not getattr(sys, 'frozen', False) and os.name != 'nt':
         found = tuple(shutil.which(name) for name in ('ffmpeg', 'ffprobe'))
         if all(found):

@@ -1,3 +1,6 @@
+import sys
+
+
 def theme_style(dark):
     if dark:
         text, background, panel, input_bg = '#e7f1e9', '#151e1b', '#202c26', '#29372f'
@@ -11,8 +14,9 @@ def theme_style(dark):
         hover, pressed, selection = '#eaf1e5', '#d9e7d3', '#e0edde'
         selected_text, table_alt, header = '#183f37', '#f6f8f3', '#eef3e9'
         disabled, progress_bg = '#87968b', '#e0e8dd'
+    fonts = '"PingFang SC", sans-serif' if sys.platform == 'darwin' else '"Microsoft YaHei", sans-serif'
     return f'''
-QWidget {{ color: {text}; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; }}
+QWidget {{ color: {text}; font-family: {fonts}; font-size: 13px; }}
 QMainWindow, QDialog, QMessageBox, #workspace, #contactsPage {{ background: {background}; }}
 #sidebar {{ background: {sidebar}; border: 0; }}
 #brand {{ color: #ffffff; font-size: 23px; font-weight: 700; padding: 12px 8px; }}

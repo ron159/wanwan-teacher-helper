@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import shutil
+import sys
 from PySide6.QtCore import Qt, QUrl, QStandardPaths
 from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence, QIcon, QGuiApplication
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -76,7 +77,8 @@ class MainWindow(QMainWindow):
             self.nav.addItem(f'{index:02d}   {title}')
         self.nav.addItem(f'{len(TOOLS) + 1:02d}   通信簿')
         side.addWidget(self.nav, 1)
-        privacy = label('文件本机处理，保留原件\n通信簿本机保存\n启动时检查 GitHub 更新', 'privacy')
+        updates = '启动时检查 GitHub 更新' if sys.platform == 'win32' else '版本更新见 GitHub Releases'
+        privacy = label(f'文件本机处理，保留原件\n通信簿本机保存\n{updates}', 'privacy')
         privacy.setWordWrap(True)
         side.addWidget(privacy)
         side.addWidget(button('使用帮助与许可', self.help))
@@ -188,6 +190,8 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence('Delete'), self.table, self.remove_selected)
 
     def check_for_updates(self):
+        if sys.platform != 'win32':
+            return
         version = current_version()
         if not version or self.update_worker is not None:
             return
@@ -490,6 +494,8 @@ class MainWindow(QMainWindow):
             self.status.setText('正在安全取消，等待当前操作退出…')
 
     def help(self):
+        updates = ('启动时仅向 GitHub 查询新版本，不上传材料。' if sys.platform == 'win32'
+                   else 'macOS 新版请从 GitHub Releases 下载，不上传材料。')
         QMessageBox.information(self, '使用帮助与第三方许可',
             '1. 选择左侧工具并添加文件，队列顺序可调整。\n'
             '2. 设置参数与输出目录，预览后确认执行。\n'
@@ -501,7 +507,7 @@ class MainWindow(QMainWindow):
             '模板：固定版式；请复核字体、换行与打印效果。\n'
             '视频：MP4 / MPEG-4 + AAC；实际体积取决于原素材。\n\n'
             '通信簿：支持 Excel 与粘贴识别、核对预览、搜索和手动编辑；数据保存在当前电脑的用户目录。\n\n'
-            '文件处理完全离线，无遥测；启动时仅向 GitHub 查询新版本，不上传材料。\n'
+            f'文件处理完全离线，无遥测；{updates}\n'
             '报告仅在指定目录生成，归档清单包含文件名。\n'
             '依赖 PySide6/Qt (LGPL)、FFmpeg (LGPL) 及其他开源组件。\n'
             '完整许可证、SBOM 与重建说明随 GitHub Release 提供。')
