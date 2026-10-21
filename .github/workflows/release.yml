@@ -107,7 +107,7 @@ jobs:
             artifacts/*-smoke/startup-probe.json
             artifacts/*-smoke/startup-failure.txt
   macos:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       QT_QPA_PLATFORM: offscreen
