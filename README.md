@@ -1,5 +1,7 @@
 # 丸丸小帮手电脑版
 
+[![最新正式版](https://img.shields.io/github/v/release/ron159/wanwan-teacher-helper?display_name=tag&sort=date)](https://github.com/ron159/wanwan-teacher-helper/releases/latest)
+
 面向幼儿园教师的离线文件助手。Python + PySide6，提供 Windows 单 EXE 与 Apple Silicon macOS 应用，无需安装 Python 或 Office。保留原件、输出不覆盖、先预览再执行，支持进度、取消与逐文件报告。
 
 ## 功能
@@ -15,7 +17,7 @@
 
 ## 使用
 
-从 Releases 下载 `WanwanTeacherHelper-*-windows-x64.exe`，双击启动。选工具 → 添加文件 → 设置输出目录 → 预览计划 → 确认。请使用“查看报告”核对结果。输出目录包含结果和 JSON 报告；报告、归档清单仍须按园所要求妥善保管。
+从 [最新正式版](https://github.com/ron159/wanwan-teacher-helper/releases/latest) 下载 `WanwanTeacherHelper-*-windows-x64.exe`，双击启动。选工具 → 添加文件 → 设置输出目录 → 预览计划 → 确认。请使用“查看报告”核对结果。输出目录包含结果和 JSON 报告；报告、归档清单仍须按园所要求妥善保管。
 
 macOS 15 及以上的 Apple Silicon Mac 下载 `WanwanTeacherHelper-*-macos-arm64.zip`，解压后将 `.app` 拖到“应用程序”即可。Mac 版内含原生 FFmpeg/ffprobe，无需 Homebrew；采用 ad-hoc 签名，尚无 Apple Developer ID 签名和公证。Mac 版从 Releases 手动下载更新，不会使用 Windows EXE 自动替换流程。
 
